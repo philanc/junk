@@ -8,7 +8,7 @@ data = {}
 data.alldeps01 = [[
 
 # alldeps.01
-#removed python from kmod, util-linux
+# removed python from kmod, util-linux
 
 ConsoleKit2.dep:acl,attr,cgmanager,dbus,eudev,glib2,libX11,libXau,libXdmcp,libffi,libnih,libxcb,polkit,zlib
 Cython.dep:python
@@ -879,6 +879,7 @@ yptools.dep:gdbm
 ytalk.dep:ncurses
 zeroconf-ioslave.dep:acl,attica,attr,bzip2,eudev,expat,fontconfig,freetype,gamin,gcc,gcc-g++,glib2,harfbuzz,kdelibs,libICE,libSM,libX11,libXau,libXcursor,libXdmcp,libXext,libXfixes,libXft,libXi,libXpm,libXrender,libXtst,libdbusmenu-qt,libffi,libpng,libxcb,libxml2,qca,qt,soprano,strigi,util-linux,xz,zlib
 zsh.dep:gdbm,ncurses
+
 ]]
 
 --[[ 
@@ -889,6 +890,170 @@ then in dep subdir
   
 ]]
 
+local function load_dep_tbl(fname)	
+	local s= data[fname]
+	s = s:gsub("openssl|openssl%-solibs", "openssl")
+	local t = he.lines(s)
+--~ 	print("dep lines", #t)
+	local dt = {}
+	allpkgd = {}
+	for i, l in ipairs(t) do
+		if l:find("|") then
+			print("==|", l)
+		end
+		p, d = l:match("(%S-)%.dep:(%S+)")
+		if p then
+			local dl = he.split(d, ",")
+			dt[p] = dl
+			for i, v in ipairs(dl) do allpkgd[v] = 1 end
+		end
+	end
+--~ 	print("packages", he.count(dt)-1, he.count(dt.allpkgd))
+	return dt
+end
+
+df = "alldeps01"; dt = load_dep_tbl(df); print("dt loaded ("..df..").")
+
+------------------------------------------------------------------------
+-- misc utils
+
+function loadnoarch(fname)
+	-- ls | grep noarch
+	local s= he.fget(fname)	
+	s = s:gsub("(%d+dpi)", "ZZZ%1")
+	local t = he.lines(s)
+	print("lines in noarch", #t)
+	local pt = list()
+	for i,v in ipairs(t) do
+		
+		local p = v:gsub("%-%d.+$", "")
+		p = p:gsub("ZZZ(%d+dpi)", "%1")
+		pt:insert(p)
+	end
+--~ 	for i=1, #t do
+--~ 		print(he.rpad(pt[i], 20), t[i])
+--~ 	end
+	return pt
+end
+
+
+function toint(s)
+	local siz
+	m = s:match("(.+)M")
+	k = s:match("(.+)K")
+	if m then siz = tonumber(m) * 1024 * 1024
+	elseif k then siz = tonumber(k) * 1024
+	else siz = tonumber(s)
+	end
+	return siz and math.floor(siz) 
+end
+
+
+function load_psizes()
+	-- grep "UNCOMPRESSED PACKAGE SIZE" * >pkgsiz
+	local s= he.fget("pkgsiz")	
+	s = s:gsub("(%d+dpi)", "ZZZ%1")
+	local t = he.lines(s)
+	local pst = {}
+	for i,v in ipairs(t) do
+		local p, s = v:match("^(%S-)%-%d.+SIZE:%s+(%S+)")
+		if p then 
+			p = p:gsub("ZZZ(%d+dpi)", "%1")
+			if not toint(s) then print("sz??", v) end
+			if not pst[p] then
+				pst[p] = toint(s)
+			else
+				print("dupl??", v)
+			end
+		else 
+			print("match??", v)
+		end
+	end
+--~ 	print("pkgsiz:", #t, he.count(pst))
+	return pst
+end
+
+function make_psizes()
+	local pst = load_psizes()
+	t = list()
+	for i,k in ipairs(he.sortedkeys(pst)) do 
+		t:insert(he.rpad(k, 30,'.') .. he.ntos(pst[k], nil, 12))
+	end
+	he.fput("psizes", t:concat('\n'))	
+end
+
+
+function load_list(fname)
+	local s= data[fname]	
+	local t = he.lines(s)
+	local pt = list()
+	for i, l in ipairs(t) do
+		l = he.strip(l)
+		if (#l > 0) and not (l:sub(1,1) == "#") then 
+			pt:insert(l) 
+		end
+	end
+	return pt
+end
+
+
+
+function append_deps(pl, dt)
+	local at = list()
+	for i, p in ipairs(bt) do
+		at:uextend({p})
+		if dt[p] then 
+			at:uextend(dt[p]) 
+			if dt[p]:has"python" then print("py:", p) end
+		end
+	end
+	table.sort(at)
+	return at
+end
+
+function make_dep_list(pl)
+	local al = list()
+	for i, p in ipairs(pl) do
+		al:uextend({p})
+		if dt[p] then 
+			al:uextend(dt[p]) 
+--~ 			if dt[p]:has"python" then print("py:", p) end
+		end
+	end
+	table.sort(al)
+	return al
+end
+
+function make_dep_file(plistname)
+	local pl = load_list(plistname)
+	local dl = make_dep_list(pl)
+	he.fputlines(plistname, pl)
+	he.fputlines(plistname.."dep", dl)
+	he.printf("%s:\t%d \twith deps: %d", plistname, #pl, #dl)
+	return dl
+end
+
+function islist(x)
+	return type(x) == "table" and getmetatable(x) == list
+end
+
+function depof(x)
+	local dol = list()
+	for p, dl in pairs(dt) do
+		if not islist(dl) then print("??", p) end
+		if dl:has(x) then dol:insert(p) end
+	end
+	dol:sort()
+	return dol
+end
+
+function pdepof(x)
+	local dl = depof(he.strip(x))
+	he.printf("%s  =>  %s", x, dl:concat("  "))
+end
+
+------------------------------------------------------------------------
+-- compute deps
 
 data.base02 = [[
 aaa_base
@@ -982,154 +1147,98 @@ which
 xz
 ]]
 
-function load_list(fname)
-	local s= data[fname]	
-	local t = he.lines(s)
-	local pt = list()
-	for i, l in ipairs(t) do
-		l = he.strip(l)
-		if (#l > 0) and not (l:sub(1,1) == "#") then 
-			pt:insert(l) 
+data.dev01 = [[
+binutils
+gcc
+gcc-g++
+make
+flex
+bison
+
+]]
+
+--~ pdepof[[ guile ]] -- gdb  gnutls  make
+--~ pdepof[[  python ]] 
+
+
+
+
+--[[ dep notes
+
+make use guile  (libguile-2.0)
+
+]]
+
+data.xterm01 = [[
+
+xf86-input-evdev
+xf86-input-keyboard
+xf86-input-mouse
+xf86-video-dummy
+xf86-video-intel
+xf86-video-vesa
+xf86dga
+
+xdpyinfo
+xdriinfo
+xev
+xeyes
+xfd
+xfontsel
+xhost
+xinit
+xinput
+xkbcomp
+xkbutils
+xlsfonts
+xmodmap
+xorg-server
+xrandr
+xrdb
+xset
+xsetroot
+xwininfo
+
+font-misc-misc
+liberation-fonts-ttf
+
+twm
+rxvt
+xterm
+
+]]
+
+data.media01 = [[
+xmms
+alsa-utils
+xsane
+mozilla-firefox
+pulseaudio
+#pavucontrol
+]]
+
+--~ l="base02";  he.fputlines(l.."dep", make_base_deps(l))
+--~ l="dev01";  he.fputlines(l.."dep", make_base_deps(l))
+--~ l="media01";  he.fputlines(l.."dep", make_base_deps(l))
+
+function make_all()
+	allp = list()
+	allp:uextend(make_dep_file"base02")
+	allp:uextend(make_dep_file"dev01")
+	allp:uextend(make_dep_file"xterm01")
+	allp:uextend(make_dep_file"media01")
+	allp:sort()
+	he.fputlines("zallp", allp)
+	pst = load_psizes()
+	siz = 0
+	for i,p in ipairs(allp) do 
+		if pst[p] then 	siz = siz + pst[p]
+		else print("no size:", p)
 		end
 	end
-	return pt
+	print("all p:", #allp, "total size:", he.ntos(siz))
 end
 
-function load_dep_tbl(fname)	
-	local s= data[fname]
-	s = s:gsub("openssl|openssl%-solibs", "openssl")
-	local t = he.lines(s)
---~ 	print("dep lines", #t)
-	local dt = {}
-	allpkgd = {}
-	for i, l in ipairs(t) do
-		if l:find("|") then
-			print("==|", l)
-		end
-		p, d = l:match("(%S-)%.dep:(%S+)")
-		if p then
-			local dl = he.split(d, ",")
-			dt[p] = dl
-			for i, v in ipairs(dl) do allpkgd[v] = 1 end
-		end
-	end
---~ 	print("packages", he.count(dt)-1, he.count(dt.allpkgd))
-	return dt
-end
+--~ make_all()
 
-df = "alldeps01"; dt = load_dep_tbl(df); print("dt loaded ("..df..").")
-
-function loadnoarch(fname)
-	-- ls | grep noarch
-	local s= he.fget(fname)	
-	s = s:gsub("(%d+dpi)", "ZZZ%1")
-	local t = he.lines(s)
-	print("lines in noarch", #t)
-	local pt = list()
-	for i,v in ipairs(t) do
-		
-		local p = v:gsub("%-%d.+$", "")
-		p = p:gsub("ZZZ(%d+dpi)", "%1")
-		pt:insert(p)
-	end
---~ 	for i=1, #t do
---~ 		print(he.rpad(pt[i], 20), t[i])
---~ 	end
-	return pt
-end
-
-
-function toint(s)
-	local siz
-	m = s:match("(.+)M")
-	k = s:match("(.+)K")
-	if m then siz = tonumber(m) * 1024 * 1024
-	elseif k then siz = tonumber(k) * 1024
-	else siz = tonumber(s)
-	end
-	return siz and math.floor(siz) 
-end
-
-
-function load_psizes()
-	-- grep "UNCOMPRESSED PACKAGE SIZE" * >pkgsiz
-	local s= he.fget("pkgsiz")	
-	s = s:gsub("(%d+dpi)", "ZZZ%1")
-	local t = he.lines(s)
-	local pst = {}
-	for i,v in ipairs(t) do
-		local p, s = v:match("^(%S-)%-%d.+SIZE:%s+(%S+)")
-		if p then 
-			p = p:gsub("ZZZ(%d+dpi)", "%1")
-			if not toint(s) then print("sz??", v) end
-			if not pst[p] then
-				pst[p] = toint(s)
-			else
-				print("dupl??", v)
-			end
-		else 
-			print("match??", v)
-		end
-	end
---~ 	print("pkgsiz:", #t, he.count(pst))
-	return pst
-end
-
-function make_psizes()
-	local pst = load_psizes()
-	t = list()
-	for i,k in ipairs(he.sortedkeys(pst)) do 
-		t:insert(he.rpad(k, 30,'.') .. he.ntos(pst[k], nil, 12))
-	end
-	he.fput("psizes", t:concat('\n'))	
-end
-
-function append_deps(pl, dt)
-	local at = list()
-	for i, p in ipairs(bt) do
-		at:uextend({p})
-		if dt[p] then 
-			at:uextend(dt[p]) 
-			if dt[p]:has"python" then print("py:", p) end
-		end
-	end
-	table.sort(at)
-	return at
-end
-
-function make_base_deps(bfn)
-	bl = load_list(bfn)
-	local al = list()
-	for i, p in ipairs(bl) do
-		al:uextend({p})
-		if dt[p] then 
-			al:uextend(dt[p]) 
-			if dt[p]:has"python" then print("py:", p) end
-		end
-	end
-	table.sort(al)
-	return al
-end
-
-function islist(x)
-	return type(x) == "table" and getmetatable(x) == list
-end
-
-function depof(x)
-	local dol = list()
-	for p, dl in pairs(dt) do
-		if not islist(dl) then print("??", p) end
-		if dl:has(x) then dol:insert(p) end
-	end
-	dol:sort()
-	return dol
-end
-
---~ print(depof'python':concat'  ')
-
-
-al = make_base_deps("base02"); he.fputlines("basedep.02a", al)
-
-
-
-
+pdepof" samba "
