@@ -1095,7 +1095,6 @@ grep
 groff
 gzip
 hdparm
-hostname
 hwdata
 infozip
 inotify-tools
@@ -1237,8 +1236,39 @@ function make_all()
 		end
 	end
 	print("all p:", #allp, "total size:", he.ntos(siz))
+	return allp
 end
 
 --~ make_all()
 
+--[[ gen pkgfiles with: 
+cwd=$(pwd)
+cd /.../repo
+find . -name "*.txz" | grep -v "/extra/"   | sort  > $cwd/pkgfiles
+]]
+
+function find_pkg_files()
+	local pfl = he.fgetlines("pkgfiles")
+	local allp = make_all()
+	local allpf = list()
+	for i, p in ipairs(allp) do
+		local found = false
+		for j, pf in ipairs(pfl) do
+			if pf:find("/"..p.."-", 1, true) then
+				allpf:insert("$inst "..pf)
+				found = true
+				break
+			end
+		end
+		if not found then print("not found", p) end
+	end
+	print(#allp, #allpf, #allpf:uniq())
+	he.fputlines("zallpf", allpf)
+	return allpf
+end
+
+--~ find_pkg_files()
+pdepof" gimp "
 pdepof" samba "
+
+
