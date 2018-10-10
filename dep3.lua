@@ -1075,6 +1075,7 @@ cryptsetup
 dcron
 devs
 dialog
+dhcpcd
 diffutils
 dmidecode
 dosfstools
@@ -1117,6 +1118,7 @@ man-pages
 mc
 mcelog
 mkinitrd
+net-tools
 network-scripts
 openssh
 openssl
@@ -1130,6 +1132,7 @@ sdparm
 sed
 shadow
 slackpkg
+strace
 sudo
 sysfsutils
 sysklogd
@@ -1151,8 +1154,10 @@ binutils
 gcc
 gcc-g++
 make
+nasm
 flex
 bison
+python
 
 ]]
 
@@ -1178,6 +1183,8 @@ xf86-video-intel
 xf86-video-vesa
 xf86dga
 
+xauth
+xclipboard
 xdpyinfo
 xdriinfo
 xev
@@ -1189,6 +1196,7 @@ xinit
 xinput
 xkbcomp
 xkbutils
+xkeyboard-config
 xlsfonts
 xmodmap
 xorg-server
@@ -1208,12 +1216,37 @@ xterm
 ]]
 
 data.media01 = [[
-xmms
 alsa-utils
-xsane
+gamin
+giflib
+glew
+gtk+3
+icu4c
+at-spi2-atk
+at-spi2-core
+gsettings-desktop-schemas
+libsecret
 mozilla-firefox
+poppler
 pulseaudio
-#pavucontrol
+shared-mime-info
+xine-lib
+xine-ui
+xmms
+xsane
+adwaita-icon-theme
+hicolor-icon-theme
+tango-icon-theme
+
+]]
+
+--[[   ??
+
+dconf
+pavucontrol
+sqlite3
+
+
 ]]
 
 --~ l="base02";  he.fputlines(l.."dep", make_base_deps(l))
@@ -1239,7 +1272,6 @@ function make_all()
 	return allp
 end
 
---~ make_all()
 
 --[[ gen pkgfiles with: 
 cwd=$(pwd)
@@ -1263,12 +1295,17 @@ function find_pkg_files()
 		if not found then print("not found", p) end
 	end
 	print(#allp, #allpf, #allpf:uniq())
+	allpf:sort()
 	he.fputlines("zallpf", allpf)
 	return allpf
 end
 
---~ find_pkg_files()
-pdepof" gimp "
-pdepof" samba "
+--~ make_all()
+find_pkg_files()
+--~ he.ppl(dt['xine-ui'])
+--~ he.ppl(dt['xine-lib'])
+--~ pdepof" gimp "
+--~ pdepof" libjpeg-turbo "
+--~ pdepof" giflib "
 
 
