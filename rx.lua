@@ -27,6 +27,12 @@ local ssplit = he.split
 local startswith, endswith = he.startswith, he.endswith
 local pp, ppl, ppt = he.pp, he.ppl, he.ppt
 
+local function px(s, msg) 
+	print("--", msg or "")
+	print(he.stohex(s, 16, " ")) 
+end
+
+
 local function repr(x)
 	return strf("%q", x) 
 end
@@ -94,7 +100,7 @@ local function timekey(mk, time)
 	-- derive a key based on time from master key
 	-- (maybe memoize it?)
 	local n16 = ('\x5a'):rep(16)
-	local tk = encrypt(mk, n16, 0, spack("<I8I8", time, time))
+	local tk = encrypt(mk, n16, spack("<I8I8", time, time))
 	assert(#tk == KEYLEN)
 	return tk
 end
@@ -190,36 +196,45 @@ end
 local function make_req_ecb(req, code, pb, paux)
 	local reqtime = req.reqtime or os.time()
 	local magic = req.magic or MAGIC
+	local nonce = req.nonce or hezen.randombytes(NONCELEN)
 	paux = paux or 0
 	pb = pb or ""
 	local cb = pack_cb(code, #pb, paux)
 	local ad = pack_ad(magic, reqtime, nonce)
-	req.tk = timekey(req.rx.smk. reqtime)
-	req.ecb = encrypt(tk, nonce, 0, cb, ad) -- ctr=0
+	req.tk = timekey(req.rx.smk, reqtime)
+	req.ecb = encrypt(req.tk, nonce, cb, 0, ad) -- ctr=0
 	assert(#req.ecb == ECBLEN)
-	req.epb = encrypt(tk, nonce, 1, pb) -- ctr=1
+	req.epb = encrypt(req.tk, nonce, pb, 1) -- ctr=1
 	return req
 end
 
 local function unwrap_req_ecb(req, ecb)
-	local magic, reqtime, nonce = unpack_ad(ecb)
-	if not magic_is_valid(magic) then 
+	req.magic, req.reqtime, req.nonce = unpack_ad(ecb)
+	if not magic_is_valid(req.magic) then 
 		return nil, "invalid req magic"
 	end
-	if not time_is_valid(reqtime) then 
+	if not time_is_valid(req.reqtime) then 
 		return nil, "invalid req time"
 	end
-	if not used_nonce(req) then
+	if used_nonce(req) then
 		return nil, "already used nonce"
 	end
-	req.reqtime = reqtime
-	req.tk = timekey(req.rx.smk, reqtime)
-	req.nonce = nonce
-	cb = decrypt(req.tk, nonce, ecb, 0, ADLEN) -- ctr=0
+	req.tk = timekey(req.rx.smk, req.reqtime)
+	cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
 	if not cb then
 		return nil, "ecb decrypt error"
 	end
 	req.code, req.pblen, req.paux = unpack_cb(cb)
+	return req
+end
+
+local function unwrap_req_epb(req, epb)
+	print(111, #epb)
+	local pb = decrypt(req.tk, req.nonce, epb, 1) -- ctr=1
+	if not pb then
+		return nil, "epb decrypt error"
+	end
+	req.pb = pb
 	return req
 end
 
@@ -243,7 +258,7 @@ local function read_req(req)
 		if (not epb) or #epb < epblen then
 			return abort(req, "cannot read req epb", errmsg)
 		end
-		local pb = decrypt(req.tk, nonce, 1, epb) -- ctr=1
+		local pb = decrypt(req.tk, nonce, epb, 1 ) -- ctr=1
 		if not pb then
 			return abort(req, "epb decrypt error")
 		end
@@ -349,6 +364,24 @@ rxs.log = log
 -- server master key
 rxs.smk = ('k'):rep(32)
 
-serve(rxs)
+--~ serve(rxs)
 
+init_ban_list(rxs)
+init_used_nonce_list(rxs)
+
+req = { rx = rxs }
+--~ req.reqtime = (1 << 30)|1
+--~ req.nonce = ("`"):rep(16)
+r = make_req_ecb(req, 3, "abcdef", 10)
+px(req.ecb)
+px(req.tk)
+
+req2 = { rx = rxs }
+r, msg = unwrap_req_ecb(req2, req.ecb)
+print("unwrap", r, msg)
+
+r, msg = unwrap_req_epb(req2, req.epb)
+print("unwrap pb", r, msg)
+
+pp(req2)
 
