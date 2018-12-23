@@ -380,15 +380,23 @@ end --read_req()
 
 
 local function handle_cmd(req)
-	-- tbd
-	disp_req(req)
-	-- set response
-	req.rcode = req.code + 1000
-	req.rpaux = req.paux + 1000
-	req.rpb = "req.pb: " .. tostring(req.pb)
 	
---~ 	req.rx.must_exit = 1
-	return true
+	if req.code == 0 then 
+		-- "ping" - return server time in rpaux
+		-- (always processed, whatever the handlers table)
+		req.rcode = 0
+		req.rpaux = os.time()
+		return true
+	end
+	local handler = req.rx.handlers[req.code]
+	if not handler then
+		req.rcode = 1 -- "no handler"
+		req.rpaux = req.code
+		return true
+	end
+	req.rcode = 0	-- default value (assume handler exec was ok)
+			-- to be changed if needed by handler
+	return handler(req)
 end
 
 local function send_response(req)
@@ -479,6 +487,53 @@ local function serve(rxs)
 	return exitcode
 end--server()
 
+------------------------------------------------------------------------
+-- handlers
+
+local default_handlers = {}
+
+default_handlers[1] = function(req)
+	-- echo req
+	req.rpb = hepack.pack(req)
+	return true
+end
+
+default_handlers[2] = function(req)
+	-- exec sh (basic)
+	local r, s = he.shell(req.pb)
+	ZZZZZZZZZZZZZZZZZZ
+	return true
+end
+
+default_handlers[4] = function(req)
+	-- kill server
+	req.rx.must_exit = 0
+	return true
+end
+
+default_handlers[5] = function(req)
+	-- reload server
+	req.rx.must_exit = 1
+	return true
+end
+
+default_handlers[6] = function(req)
+	-- reload rc.lua
+	req.rx.must_exit = 1
+	return true
+end
+
+
+
+default_handlers[1] = function(req)
+	-- 
+end
+
+
+
+------------------------------------------------------------------------
+-- default parameters
+
 local function server_set_defaults(rxs)
 	-- set some defaults values for a server
 	--	
@@ -488,6 +543,8 @@ local function server_set_defaults(rxs)
 	rxs.log_rejected = true 
 	rxs.log_aborted = true
 	rxs.log = log
+	-- set default handlers
+	rxs.handlers = he.clone(default_handlers)
 	-- 
 end --server_set_defaults()
 
