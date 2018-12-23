@@ -42,6 +42,11 @@ local function log(...)
 end
 
 ------------------------------------------------------------------------
+
+
+------------------------------------------------------------------------
+-- common utilities
+
 -- encryption
 
 local KEYLEN = 32
@@ -66,35 +71,16 @@ end
 
 
 ------------------------------------------------------------------------
---[[ rx server
 
-
-same nonce used for the 4 encr, different counters 
-	req.cb	nonce, ctr=0
-	req.pb	nonce, ctr=1
-	resp.cb	nonce, ctr=2
-	resp.pb	nonce, ctr=3
-		
-
-]]
 
 local CBLEN = 16
 local ADLEN = 32
 local ECBLEN = ADLEN + CBLEN + MACLEN
+local ERCBLEN = CBLEN + MACLEN
 
 -- magic number for regular request
 MAGIC = 0x0807060504030201
 
--- max difference between request time and server time
-MAX_TIME_DRIFT = 300  
-
-local function magic_is_valid(magic)
-	return magic == MAGIC
-end
-
-local function time_is_valid(time)
-	return math.abs(os.time() - time) < MAX_TIME_DRIFT
-end
 
 local function timekey(mk, time)
 	-- derive a key based on time from master key
@@ -127,13 +113,130 @@ local function unpack_ad(ecb)
 	return magic, reqtime, nonce
 end
 
+local function disp_req(req)
+	print("req.code:", req.code)
+	print("req.paux:", req.paux)
+	print("req.pb:", repr(req.pb))
+end
+
+local function disp_resp(req)
+	print("req.rcode:", req.rcode)
+	print("req.rpaux:", req.rpaux)
+	print("req.rpb:", repr(req.rpb))
+end
 
 
 ------------------------------------------------------------------------
--- utilities
+-- client utilities 
 
 
--- ban system
+local function make_req_ecb(req, code, pb, paux)
+	local paux = paux or req.paux
+	local pb = pb or req.pb
+	local code = code or req.code
+	local reqtime = req.reqtime or os.time()
+	local magic = req.magic or MAGIC
+	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
+	paux = paux or 0
+	pb = pb or ""
+	local cb = pack_cb(code, #pb, paux)
+	local ad = pack_ad(magic, reqtime, req.nonce)
+	req.tk = timekey(req.rx.smk, reqtime)
+	req.ecb = encrypt(req.tk, req.nonce, cb, 0, ad) -- ctr=0
+--~ 	assert(#req.ecb == ECBLEN)
+	if #pb > 0 then
+		req.epb = encrypt(req.tk, req.nonce, pb, 1) -- ctr=1
+	end
+	return req
+end
+
+local function send_request(req)
+	local r, errmsg
+	req.server, errmsg = hesock.connect(req.rx.rawaddr)
+	if not req.server then 
+		return nil, errmsg
+	end
+	r = make_req_ecb(req)
+	r, errmsg = req.server:write(req.ecb)
+	if not r then 
+		return nil, "cannot send ecb " .. repr(errmsg)
+	end
+	if req.epb then 
+		r, errmsg = req.server:write(req.epb)
+		if not r then 
+			return nil, "cannot send epb " .. repr(errmsg)
+		end
+	end
+	return true
+end --send_request
+
+local function read_response(req)
+	local cb, ercb, rcb, erpb, rpb, r, errmsg
+	ercb, errmsg = req.server:read(ERCBLEN)
+	if (not ercb) or #ercb < ERCBLEN then
+		return nil, "cannot read ercb " .. repr(errmsg)
+	end
+	rcb = decrypt(req.tk, req.nonce, ercb, 2) -- ctr=2
+	if not rcb then
+		return nil, "ercb decrypt error"
+	end
+	req.rcode, req.rpblen, req.rpaux = unpack_cb(rcb)	
+	
+	-- now read rpb if any
+	if req.rpblen > 0 then 
+		local erpblen = req.rpblen + MACLEN
+		erpb, errmsg = req.server:read(erpblen)
+		if (not erpb) or #erpb < erpblen then
+			return nil, "cannot read erpb " .. repr(errmsg)
+		end
+		req.rpb = decrypt(req.tk, req.nonce, erpb, 3) -- ctr=3
+		if not req.rpb then
+			return nil, "erpb decrypt error"
+		end
+	end
+	return req
+end --read_resp()
+
+------------------------------------------------------------------------
+-- client functions
+
+local function request_req(req)
+	-- send a pre-initialized request and read response
+	-- allows to test specific params (reqtime, nonce, ...)
+	local r, errmsg
+	r, errmsg = send_request(req)
+	if not r then
+		return nil, errmsg
+	end
+	r, errmsg = read_response(req)
+	if not r then
+		return nil, errmsg
+	end
+	return req
+end --request_req()
+
+local function request(rxs, code, paux, pb)
+	local r, errmsg
+	pb = pb or ""
+	paux = paux or 0
+	req = { 
+		rx = rxs,
+		code = code,
+		paux = paux,
+		pb = pb,
+	}
+	r, errmsg = request_req(req)
+	if not r then 
+		return nil, errmsg
+	end
+	return req.rcode, req.rpaux, req.rpb
+end --request()
+
+-----------------------------------------------------------------------
+-- SERVER
+
+-----------------------------------------------------------------------
+-- server - ban system and anti-replay and other utilities
 
 local BAN_MAX_TRIES = 3
 
@@ -143,8 +246,9 @@ end
 	
 local function ban_if_needed(req)
 	local tries = he.incr(req.rx.ban_tries, req.client_ip)
-	if tires > BAN_MAX_TRIES then
+	if tries > BAN_MAX_TRIES then
 		req.rx.banned_ip_tbl[req.client_ip] = true
+		req.rx.log("BANNED", req.client_ip)
 	end
 end
 
@@ -154,8 +258,9 @@ local function ban_counter_reset(req)
 end
 
 local function init_ban_list(rx)
-	-- ATM, start with empty list
+	-- ATM, start with empty lists
 	rx.ban_tries = {}
+	rx.banned_ip_tbl = {}
 end
 	
 local function init_used_nonce_list(rx)
@@ -192,21 +297,18 @@ local function abort(req, msg1, msg2)
 	return false
 end
 
+-- max difference between request time and server time
+MAX_TIME_DRIFT = 300  
 
-local function make_req_ecb(req, code, pb, paux)
-	local reqtime = req.reqtime or os.time()
-	local magic = req.magic or MAGIC
-	local nonce = req.nonce or hezen.randombytes(NONCELEN)
-	paux = paux or 0
-	pb = pb or ""
-	local cb = pack_cb(code, #pb, paux)
-	local ad = pack_ad(magic, reqtime, nonce)
-	req.tk = timekey(req.rx.smk, reqtime)
-	req.ecb = encrypt(req.tk, nonce, cb, 0, ad) -- ctr=0
-	assert(#req.ecb == ECBLEN)
-	req.epb = encrypt(req.tk, nonce, pb, 1) -- ctr=1
-	return req
+local function magic_is_valid(magic)
+	return magic == MAGIC
 end
+
+local function time_is_valid(time)
+	return math.abs(os.time() - time) < MAX_TIME_DRIFT
+end
+
+--
 
 local function unwrap_req_ecb(req, ecb)
 	req.magic, req.reqtime, req.nonce = unpack_ad(ecb)
@@ -229,7 +331,6 @@ local function unwrap_req_ecb(req, ecb)
 end
 
 local function unwrap_req_epb(req, epb)
-	print(111, #epb)
 	local pb = decrypt(req.tk, req.nonce, epb, 1) -- ctr=1
 	if not pb then
 		return nil, "epb decrypt error"
@@ -238,7 +339,7 @@ local function unwrap_req_epb(req, epb)
 	return req
 end
 
-local function read_req(req)
+local function read_request(req)
 	local cb, ecb, errmsg, epb, r
 	ecb, errmsg = req.client:read(ECBLEN)
 	if (not ecb) or #ecb < ECBLEN then
@@ -252,28 +353,60 @@ local function read_req(req)
 	ban_counter_reset(req)
 	--
 	-- now read pb if any
-	if pblen > 0 then 
-		local epblen = pblen + MACLEN
+	if req.pblen > 0 then 
+		local epblen = req.pblen + MACLEN
 		epb, errmsg = req.client:read(epblen)
 		if (not epb) or #epb < epblen then
 			return abort(req, "cannot read req epb", errmsg)
 		end
-		local pb = decrypt(req.tk, nonce, epb, 1 ) -- ctr=1
-		if not pb then
+		r, errmsg = unwrap_req_epb(req, epb)
+		if not r then
 			return abort(req, "epb decrypt error")
 		end
-		req.pb = pb
 	end
 	return req
+end --read_req()
+
+
+local function handle_cmd(req)
+	-- tbd
+	disp_req(req)
+	-- set response
+	req.rcode = req.code + 1000
+	req.rpaux = req.paux + 1000
+	req.rpb = "req.pb: " .. tostring(req.pb)
+	
+--~ 	req.rx.must_exit = 1
+	return true
 end
 
-
-	
+local function send_response(req)
+	-- tbd
+	local ercb, erpb, r, errmsg
+	local rpb = req.rpb or ""
+	req.ercb = encrypt(req.tk, req.nonce, 
+		pack_cb(req.rcode, #rpb, req.rpaux), 2) -- ctr=2 
+	if #rpb > 0 then 
+		req.erpb = encrypt(req.tk, req.nonce, rpb, 3) -- ctr=3
+	end
+	r, errmsg = req.client:write(req.ercb)
+	if not r then
+		return abort(req, "send resp ercb", errmsg)
+	end
+	if req.erpb then
+		r, errmsg = req.client:write(req.erpb)
+		if not r then
+			return abort(req, "send resp erpb", errmsg)
+		end
+	end
+	print("sent response")
+	return true
+end --send_response()	
 
 ------------------------------------------------------------------------
--- rx server
+-- main server functions
 
-local function serve_client(client)
+local function serve_client(rx, client)
 	-- process a client request:
 	--    get a request from the client socket
 	--    call the command handler
@@ -282,7 +415,7 @@ local function serve_client(client)
 	--    return to the server main loop
 	--
 	local r, errmsg
-	local client_ip, client_port = hesock.getclientinfo(req.client, true)
+	local client_ip, client_port = hesock.getclientinfo(client, true)
 	local req = {
 		rx = rx, 
 		client = client,
@@ -290,98 +423,68 @@ local function serve_client(client)
 		client_port = client_port,
 	}
 	r = check_not_banned(req)
-	    and read_req(req)
+	    and read_request(req)
 	    and handle_cmd(req)
 	    and send_response(req)
 
 	if r then
-		rx.log("served client", req.client_ip)
+		rx.log("served client", req.client_ip, req.client_port)
 	end
 	hesock.close(client) 
 end--serve_client()
 
 -- the server main loop
-local function serve(rx)
+local function serve(rxs)
 	-- server main loop:
 	-- 	wait for a client
 	--	call serve_client() to process client request
 	--	rinse, repeat
 	local client, msg
-	init_ban_list(rx)
-	init_used_nonce_list(rx)
-	local server = assert(hesock.bind(rx.rawaddr))
-	rx.log(strf("hehs bound to %s ", repr(rx.rawaddr)))
+	init_ban_list(rxs)
+	init_used_nonce_list(rxs)
+	local server = assert(hesock.bind(rxs.rawaddr))
+	rxs.log(strf("hehs bound to %s ", repr(rxs.rawaddr)))
 	print("getserverinfo(server)", hesock.getserverinfo(server, true))
-	rx.must_exit = 1
-	while not rx.must_exit do
+--~ 	rx.must_exit = 1
+	while not rxs.must_exit do
 		client, msg = hesock.accept(server)
 		if not client then
-			rx.log("rx.serve(): accept() error", msg)
-		elseif rx.debug_mode then 
---~ 			rx.log("serving client", client)
+			rxs.log("rx serve(): accept error", msg)
+		elseif rxs.debug_mode then 
+--~ 			rxs.log("serving client", client)
 			-- serve and close the connection
-			serve_client(client) 
---~ 			rx.log("client closed.", client)
+			serve_client(rxs, client) 
+--~ 			rxs.log("client closed.", client)
 		else
-			pcall(serve_client, client)
+			pcall(serve_client, rxs, client)
 		end
 	end--while
 	if client then hesock.close(client); client = nil end
-	-- TODO should be: 	close_all_clients(rx)
+	-- TODO should be: 	close_all_clients(rxs)
 	local r, msg = hesock.close(server)
-	rx.log("hehs closed", r, msg)
-	local exitcode = rx.must_exit
-	rx.must_exit = nil  --WHY??
+	rxs.log("hehs closed", r, msg)
+	local exitcode = rxs.must_exit
+	rxs.must_exit = nil  --WHY??
 	return exitcode
 end--server()
 
 
 ------------------------------------------------------------------------
--- run 
+-- rx module
 
+local rx = {
+	pack_cb = pack_cb,
+	unpack_cb = unpack_cb,
+	make_req_ecb = make_req_ecb,
+	unwrap_req_ecb = unwrap_req_ecb,
+	unwrap_req_epb = unwrap_req_epb,
+	disp_req = disp_req,
+	disp_resp = disp_resp,
+	read_response = read_response,
+	send_request = send_request,
+	request_req = request_req,
+	request = request,
+	serve = serve,
+}
 
-
-rxs = {}
-
--- bind raw address  (localhost:3090)
-rxs.rawaddr = '\2\0\x0c\x12\127\0\0\1\0\0\0\0\0\0\0\0'
--- bind_address = '::1'    -- for ip6 localhost
-
--- server state
-rxs.must_exit = nil  -- server main loop exits if true 
-		     -- handlers can set it to an exit code
-		     -- convention: 0 for exit, 1 for exit+reload
-
--- debug_mode
--- true => request handler is executed without pcall()
---	   a handler error crashes the server
-rxs.debug_mode = true
-
--- server log function
--- default is to print messages to stdout.
-rxs.log = log  
-
--- server master key
-rxs.smk = ('k'):rep(32)
-
---~ serve(rxs)
-
-init_ban_list(rxs)
-init_used_nonce_list(rxs)
-
-req = { rx = rxs }
---~ req.reqtime = (1 << 30)|1
---~ req.nonce = ("`"):rep(16)
-r = make_req_ecb(req, 3, "abcdef", 10)
-px(req.ecb)
-px(req.tk)
-
-req2 = { rx = rxs }
-r, msg = unwrap_req_ecb(req2, req.ecb)
-print("unwrap", r, msg)
-
-r, msg = unwrap_req_epb(req2, req.epb)
-print("unwrap pb", r, msg)
-
-pp(req2)
-
+return rx
