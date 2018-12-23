@@ -244,8 +244,13 @@ end --request()
 
 local function check_not_banned(req)
 	local r = not req.rx.banned_ip_tbl[req.client_ip]
-	if (not r) and req.rx.log_already_banned then 
-		log("already banned", req.client_ip)
+	if not r then
+		he.incr(req.rx.banned_ip_tbl, req.client_ip)
+		if req.rx.log_already_banned then 
+			log("already banned ip, tries", 
+			    req.client_ip,
+			    req.rx.banned_ip_tbl[req.client_ip])
+		end
 	end
 	return r
 end
@@ -253,7 +258,7 @@ end
 local function ban_if_needed(req)
 	local tries = he.incr(req.rx.ban_tries, req.client_ip)
 	if tries > req.rx.ban_max_tries then
-		req.rx.banned_ip_tbl[req.client_ip] = true
+		he.incr(req.rx.banned_ip_tbl, req.client_ip)
 		req.rx.log("BANNED", req.client_ip)
 	end
 end
