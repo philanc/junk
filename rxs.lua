@@ -58,12 +58,16 @@ rxs.must_exit = nil  -- server main loop exits if true
 		     -- handlers can set it to an exit code
 		     -- convention: 0 for exit, 1 for exit+reload
 
+
+rx.server_set_defaults(rxs)
+
 -- debug_mode
 -- true => request handler is executed without pcall()
 --	   a handler error crashes the server
 rxs.debug_mode = true
 
-rx.server_set_defaults(rxs)
+rxs.log_already_banned = true
+
 
 -- server master key4
 rxs.smk = ('k'):rep(32)
