@@ -78,8 +78,7 @@ local ADLEN = 32
 local ECBLEN = ADLEN + CBLEN + MACLEN
 local ERCBLEN = CBLEN + MACLEN
 
--- magic number for regular request
-MAGIC = 0x0807060504030201
+
 
 
 local function timekey(mk, time)
@@ -135,7 +134,7 @@ local function make_req_ecb(req, code, pb, paux)
 	local pb = pb or req.pb
 	local code = code or req.code
 	local reqtime = req.reqtime or os.time()
-	local magic = req.magic or MAGIC
+	local magic = req.magic or req.rx.magic
 	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
 	paux = paux or 0
 	pb = pb or ""
@@ -238,7 +237,6 @@ end --request()
 -----------------------------------------------------------------------
 -- server - ban system and anti-replay and other utilities
 
-local BAN_MAX_TRIES = 3
 
 local function check_not_banned(req)
 	return not req.rx.banned_ip_tbl[req.client_ip]
@@ -246,7 +244,7 @@ end
 	
 local function ban_if_needed(req)
 	local tries = he.incr(req.rx.ban_tries, req.client_ip)
-	if tries > BAN_MAX_TRIES then
+	if tries > req.rx.ban_max_tries then
 		req.rx.banned_ip_tbl[req.client_ip] = true
 		req.rx.log("BANNED", req.client_ip)
 	end
@@ -298,24 +296,24 @@ local function abort(req, msg1, msg2)
 end
 
 -- max difference between request time and server time
-MAX_TIME_DRIFT = 300  
+-- defined in server rxs.max_time_drift
 
-local function magic_is_valid(magic)
-	return magic == MAGIC
+local function magic_is_valid(req)
+	return req.magic == req.rx.magic
 end
 
-local function time_is_valid(time)
-	return math.abs(os.time() - time) < MAX_TIME_DRIFT
+local function time_is_valid(req)
+	return math.abs(os.time() - req.reqtime) < req.rx.max_time_drift
 end
 
 --
 
 local function unwrap_req_ecb(req, ecb)
 	req.magic, req.reqtime, req.nonce = unpack_ad(ecb)
-	if not magic_is_valid(req.magic) then 
+	if not magic_is_valid(req) then 
 		return nil, "invalid req magic"
 	end
-	if not time_is_valid(req.reqtime) then 
+	if not time_is_valid(req) then 
 		return nil, "invalid req time"
 	end
 	if used_nonce(req) then
@@ -468,6 +466,17 @@ local function serve(rxs)
 	return exitcode
 end--server()
 
+local function server_set_defaults(rxs)
+	-- set some defaults values for a server
+	--	
+	rxs.magic = 0x0807060504030201 -- magic number for regular request
+	rxs.max_time_drift = 300 -- max secs between client and server time
+	rxs.ban_max_tries = 3  -- number of tries before being banned
+	rxs.log_rejected = true 
+	rxs.log_aborted = true
+	rxs.log = log
+	-- 
+end --server_set_defaults()
 
 ------------------------------------------------------------------------
 -- rx module
@@ -485,6 +494,7 @@ local rx = {
 	request_req = request_req,
 	request = request,
 	serve = serve,
+	server_set_defaults = server_set_defaults,
 }
 
 return rx

@@ -52,6 +52,8 @@ local rx = require 'rx'
 -- server info
 rxs = {}
 
+rx.server_set_defaults(rxs)
+
 -- bind raw address  (localhost:3090)
 rxs.rawaddr = '\2\0\x0c\x12\127\0\0\1\0\0\0\0\0\0\0\0'
 rxs.addr = "127.0.0.1"

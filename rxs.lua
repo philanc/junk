@@ -63,9 +63,7 @@ rxs.must_exit = nil  -- server main loop exits if true
 --	   a handler error crashes the server
 rxs.debug_mode = true
 
--- server log function
--- default is to print messages to stdout.
-rxs.log = log  
+rx.server_set_defaults(rxs)
 
 -- server master key4
 rxs.smk = ('k'):rep(32)
