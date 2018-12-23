@@ -172,8 +172,12 @@ end --send_request
 local function read_response(req)
 	local cb, ercb, rcb, erpb, rpb, r, errmsg
 	ercb, errmsg = req.server:read(ERCBLEN)
-	if (not ercb) or #ercb < ERCBLEN then
-		return nil, "cannot read ercb " .. repr(errmsg)
+	if not ercb then
+		return nil, "read ercb error " .. repr(errmsg)
+	end
+	if #ercb < ERCBLEN then
+		errmsg = "read " .. repr(#ercb) .. " bytes"
+		return nil, "read ercb error " .. repr(errmsg)
 	end
 	rcb = decrypt(req.tk, req.nonce, ercb, 2) -- ctr=2
 	if not rcb then
