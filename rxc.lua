@@ -15,7 +15,8 @@ package.path = "../he/?.lua;" .. package.path
 ------------------------------------------------------------------------
 -- imports and local definitions
 
-local he = require 'he'
+--~ local he = require 'he'
+he = require 'he'
 local hefs = require 'hefs'
 local hezen = require 'hezen'
 local hepack = require 'hepack'
@@ -73,10 +74,14 @@ req = { rx = rxs }
 --~ px(req.ecb)
 --~ px(req.tk)
 
-a=1
+a=5
 
 if a == 0 then
-	print(rx.request(rxs, 3, 0, "abcdefghi"))
+	print(rx.request(rxs, 3, 0, "for k,v in pairs(_ENV) do print(k,he.repr(v)) end "))
+--~ 	print(rx.request(rxs, 3, 0, "local a={...}; he.pp(a[1].rx) "))
+--~ 	print(rx.request(rxs, 3, 0, "local a={...}; he=require'he'; he.pp(a[1].rx) "))
+--~ 	print(rx.request(rxs, 3, 0, "local a={...}; print(a[1].reqtime) "))
+--~ 	print(rx.request(rxs, 3, 0, "print(123) "))
 elseif a == 1 then
 	req = { rx = rxs }
 --~ 	req.reqtime = (1 << 30)|1
@@ -84,5 +89,7 @@ elseif a == 1 then
 	req.code = 2
 	print(rx.request_req(req))
 	rx.disp_resp(req)
+elseif a == 5 then 
+	print(rx.request(rxs, 5))
 end
 

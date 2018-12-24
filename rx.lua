@@ -15,7 +15,8 @@ package.path = "../he/?.lua;" .. package.path
 ------------------------------------------------------------------------
 -- imports and local definitions
 
-local he = require 'he'
+--~ local he = require 'he'
+he = require 'he'
 local hefs = require 'hefs'
 local hezen = require 'hezen'
 local hepack = require 'hepack'
@@ -39,6 +40,15 @@ end
 
 local function log(...)
 	print(he.isodate():sub(10), ...)
+end
+
+local function exec_lua(s, ...)
+	local chunk, r, errmsg 
+	chunk, errmsg = load(s, "chunk", "bt", _ENV)
+	if not chunk then
+		return nil, errmsg
+	end
+	return chunk(...)
 end
 
 ------------------------------------------------------------------------
@@ -222,7 +232,7 @@ local function request(rxs, code, paux, pb)
 	local r, errmsg
 	pb = pb or ""
 	paux = paux or 0
-	req = { 
+	local req = { 
 		rx = rxs,
 		code = code,
 		paux = paux,
@@ -333,7 +343,7 @@ local function unwrap_req_ecb(req, ecb)
 		return nil, "already used nonce"
 	end
 	req.tk = timekey(req.rx.smk, req.reqtime)
-	cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
+	local cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
 	if not cb then
 		return nil, "ecb decrypt error"
 	end
@@ -395,8 +405,9 @@ local function handle_cmd(req)
 		return true
 	end
 	req.rcode = 0	-- default value (assume handler exec was ok)
-			-- to be changed if needed by handler
-	return handler(req)
+			-- to be changed as needed by handler
+	handler(req)
+	return true
 end
 
 local function send_response(req)
@@ -495,40 +506,55 @@ local default_handlers = {}
 default_handlers[1] = function(req)
 	-- echo req
 	req.rpb = hepack.pack(req)
-	return true
 end
 
 default_handlers[2] = function(req)
 	-- exec sh (basic)
 	local r, s = he.shell(req.pb)
-	ZZZZZZZZZZZZZZZZZZ
-	return true
+	req.rpb = r
+	req.rpaux = s
 end
+
+default_handlers[3] = function(req)
+	-- exec lua (basic)
+--~ 	local r, errmsg = exec_lua(req.pb, req)
+	local s = req.pb
+	local chunk, r, errmsg 
+	chunk, errmsg = load(s, "chunk3", "bt")
+	if not chunk then	
+		print("chunk syntax error")
+		return nil, errmsg
+	end
+	chunk(req)
+	if not r then
+		req.rcode = 1
+		req.rpb = errmsg
+	else
+		req.rpb = tostring(r)
+	end
+end
+
+
 
 default_handlers[4] = function(req)
 	-- kill server
 	req.rx.must_exit = 0
-	return true
 end
 
 default_handlers[5] = function(req)
 	-- reload server
 	req.rx.must_exit = 1
-	return true
 end
 
 default_handlers[6] = function(req)
 	-- reload rc.lua
-	req.rx.must_exit = 1
-	return true
+	local rc = he.fget("rc.lua")
+	local r, errmsg = exec_lua(rc)
+	if not r then
+		req.rcode = 1
+		req.rpb = errmsg
+	end
 end
-
-
-
-default_handlers[1] = function(req)
-	-- 
-end
-
 
 
 ------------------------------------------------------------------------
