@@ -237,6 +237,9 @@ local function request(rxs, code, paux, pb)
 		code = code,
 		paux = paux,
 		pb = pb,
+		rpaux = 0,
+		rpb = "",
+		
 	}
 	r, errmsg = request_req(req)
 	if not r then 
@@ -505,7 +508,8 @@ local default_handlers = {}
 
 default_handlers[1] = function(req)
 	-- echo req
-	req.rpb = hepack.pack(req)
+--~ 	he.pp(req)
+	req.rpb = hepack.pack(req, "repr")  --beware functions!
 end
 
 default_handlers[2] = function(req)
@@ -520,21 +524,20 @@ default_handlers[3] = function(req)
 --~ 	local r, errmsg = exec_lua(req.pb, req)
 	local s = req.pb
 	local chunk, r, errmsg 
-	chunk, errmsg = load(s, "chunk3", "bt")
-	if not chunk then	
-		print("chunk syntax error")
-		return nil, errmsg
+	chunk, errmsg = load(s, "req.pb", "bt")
+	if not chunk then
+		req.rcode = 2
+		req.rpb = "invalid chunk: " .. errmsg
+		return
 	end
-	chunk(req)
-	if not r then
+	r, errmsg = chunk(req)
+	if (not r) and errmsg then
 		req.rcode = 1
-		req.rpb = errmsg
+		req.rpb = tostring(errmsg)
 	else
 		req.rpb = tostring(r)
 	end
 end
-
-
 
 default_handlers[4] = function(req)
 	-- kill server
