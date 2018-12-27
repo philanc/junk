@@ -72,6 +72,6 @@ rxs.log_already_banned = true
 -- server master key4
 rxs.smk = ('k'):rep(32)
 
-return rx.serve(rxs)
+os.exit(rx.serve(rxs))
 
 

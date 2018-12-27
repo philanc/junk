@@ -153,6 +153,18 @@ function test_h5()
 	print("test_h5:  ok")
 end
 
+function test_h6_h7()
+	local fn, s = "/tmp/rxc-hello", he.isodate()
+	pb = spack("<s2s4", fn, s)
+	rcode, rpaux, rpb = rx.request(rxs, 7, 0, pb)
+	assert(rcode == 0)
+	assert(rpb == "")
+	rcode, rpaux, rpb = rx.request(rxs, 6, 0, fn)
+	assert(rcode == 0)
+	assert(rpb == s)
+	print("test_h6_h7:  ok")
+end
+	
 
 
 
@@ -161,7 +173,8 @@ test_h1() --echo req
 test_h2() --shell
 test_h3() --lua
 --~ test_h4() -- kill server
-test_h5() -- restart server
+--~ test_h5() -- restart server
+test_h6_h7() -- get / set remote file
 
 
 --[==[

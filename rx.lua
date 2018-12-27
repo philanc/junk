@@ -39,7 +39,8 @@ local function repr(x)
 end
 
 local function log(...)
-	print(he.isodate():sub(10), ...)
+--~ 	print(he.isodate():sub(10), ...)
+	print(he.isodate(), ...)
 end
 
 local function exec_lua(s, ...)
@@ -256,7 +257,13 @@ end --request()
 
 
 local function check_not_banned(req)
-	local r = not req.rx.banned_ip_tbl[req.client_ip]
+	local r
+	r = req.rx.whitelist[req.client_ip]
+	if r then 
+		-- (whitelist overrides banned list)
+		return r 
+	end
+	r = not req.rx.banned_ip_tbl[req.client_ip]
 	if not r then
 		he.incr(req.rx.banned_ip_tbl, req.client_ip)
 		if req.rx.log_already_banned then 
@@ -279,12 +286,15 @@ end
 local function ban_counter_reset(req)
 	-- clear the try-counter (after a valid request)
 	req.rx.ban_tries[req.client_ip] = nil
+	-- auto whitelist
+	req.rx.whitelist[req.client_ip] = true
 end
 
 local function init_ban_list(rx)
 	-- ATM, start with empty lists
 	rx.ban_tries = {}
 	rx.banned_ip_tbl = {}
+	rx.whitelist = {}
 end
 	
 local function init_used_nonce_list(rx)
@@ -393,7 +403,10 @@ end --read_req()
 
 
 local function handle_cmd(req)
-	
+	--
+	req.rx.log(strf("serving code=%s ip=%s port=%s", 
+		tostring(req.code), 
+		req.client_ip, tostring(req.client_port)))
 	if req.code == 0 then 
 		-- "ping" - return server time in rpaux
 		-- (always processed, whatever the handlers table)
@@ -403,7 +416,7 @@ local function handle_cmd(req)
 	end
 	local handler = req.rx.handlers[req.code]
 	if not handler then
-		req.rcode = 1 -- "no handler"
+		req.rcode = 99 -- "no handler"
 		req.rpaux = req.code
 		return true
 	end
@@ -432,7 +445,7 @@ local function send_response(req)
 			return abort(req, "send resp erpb", errmsg)
 		end
 	end
-	print("sent response")
+--~ 	print("sent response")
 	return true
 end --send_response()	
 
@@ -460,9 +473,9 @@ local function serve_client(rx, client)
 	    and handle_cmd(req)
 	    and send_response(req)
 
-	if r then
-		rx.log("served client", req.client_ip, req.client_port)
-	end
+--~ 	if r then
+--~ 		rx.log("served client", req.client_ip, req.client_port)
+--~ 	end
 	hesock.close(client) 
 end--serve_client()
 
@@ -550,9 +563,19 @@ default_handlers[5] = function(req)
 end
 
 default_handlers[6] = function(req)
-	-- reload rc.lua
-	local rc = he.fget("rc.lua")
-	local r, errmsg = exec_lua(rc)
+	-- simple get file
+	local r, errmsg = he.fget(req.pb)
+	if not r then
+		req.rcode = 1
+		req.rpb = errmsg
+	end
+	req.rpb = r
+end
+
+default_handlers[7] = function(req)
+	-- simple set/put file
+	local fn, s = sunpack("<s2s4", req.pb)
+	local r, errmsg = he.fput(fn , s)
 	if not r then
 		req.rcode = 1
 		req.rpb = errmsg
