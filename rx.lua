@@ -3,7 +3,21 @@
 ------------------------------------------------------------------------
 --[[ 
 
-=== rx v2
+=== rx 
+
+181227  v2. 
+	48-byte ecb = magic(2) time(6) cb mac
+	cb = p1len pblen
+	pb = p1 p2
+	rcb = rcode rpblen
+
+181228  
+	removed magic
+	restruct code to 
+	- make protocol more indep from transport
+	- separate server code from client ??
+
+
 
 
 ]]
@@ -16,48 +30,34 @@ package.path = "../he/?.lua;" .. package.path
 -- imports and local definitions
 
 --~ local he = require 'he'
-he = require 'he'
-local hefs = require 'hefs'
+he = require 'he'  -- make he global for request chunks
 local hezen = require 'hezen'
-local hepack = require 'hepack'
 local hesock = require 'hesock'
 
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
-local ssplit = he.split
-local startswith, endswith = he.startswith, he.endswith
-local pp, ppl, ppt = he.pp, he.ppl, he.ppt
 
 local function px(s, msg) 
 	print("--", msg or "")
 	print(he.stohex(s, 16, " ")) 
 end
 
-
 local function repr(x)
 	return strf("%q", x) 
 end
+
 
 local function log(...)
 --~ 	print(he.isodate():sub(10), ...)
 	print(he.isodate(), ...)
 end
 
-local function exec_lua(s, ...)
-	local chunk, r, errmsg 
-	chunk, errmsg = load(s, "lua_chunk")
-	if not chunk then
-		return nil, errmsg
-	end
-	return chunk(...)
-end
-
-------------------------------------------------------------------------
-
 
 ------------------------------------------------------------------------
 -- common utilities
 
+
+------------------------------------------------------------------------
 -- encryption
 
 local KEYLEN = 32
@@ -77,12 +77,8 @@ local function decrypt(key, nonce, c, ctr, adlen)
 	return hezen.morus_decrypt(key, nonce, c, ctr, adlen)
 end
 
-
-
-
-
 ------------------------------------------------------------------------
-
+-- protocol elements
 
 local CBLEN = 8
 local ADLEN = 24
@@ -90,10 +86,8 @@ local ECBLEN = ADLEN + CBLEN + MACLEN
 local ERCBLEN = CBLEN + MACLEN
 
 
-
-
 local function timekey(mk, time)
-	-- derive a key based on time from master key
+	-- derive a key based on time from master key mk
 	-- (maybe memoize it?)
 	local n16 = ('\x5a'):rep(16)
 	local tk = encrypt(mk, n16, spack("<I8I8", time, time))
@@ -103,7 +97,7 @@ end
 
 
 local cb_fmt = "<I4I4" -- c1, c2
-local ad_fmt = "<I2I6c16" -- magic, reqtime, nonce
+local ad_fmt = "<I8c16" -- reqtime, nonce
 
 local function pack_cb(c1, c2)
 	return spack(cb_fmt, c1, c2)
@@ -113,32 +107,29 @@ local function unpack_cb(cb)
 	return sunpack(cb_fmt, cb)
 end
 
-local function pack_ad(magic, reqtime, nonce)
-	return spack(ad_fmt, magic, reqtime, nonce)
+local function pack_ad(reqtime, nonce)
+	return spack(ad_fmt, reqtime, nonce)
 end
 
 local function unpack_ad(ecb)
-	local magic, reqtime, nonce = sunpack(ad_fmt, ecb)
-	return magic, reqtime, nonce
-end
-
-local function shell(s)
-	local r, exitcode = he.shell(s)
-	return r, exitcode
+	local reqtime, nonce = sunpack(ad_fmt, ecb)
+	return reqtime, nonce
 end
 
 ------------------------------------------------------------------------
--- client utilities 
+-- request / response utilities 
 
-
-local function make_req_ecb(req)
-	local pb = req.p1 .. req.p2
-	local reqtime = req.reqtime or os.time()
-	local magic = req.magic or req.rx.magic
+local function wrap_req(req)
+	-- after exec, encrypted control block is req.ecb
+	-- if needed, encrypted param block is req.epb
+	local p1 = req.p1 or ""
+	local p2 = req.p2 or ""
+	local pb = p1 .. p2
+	req.reqtime = req.reqtime or os.time()
 	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
-	local cb = pack_cb(#req.p1, #pb)
-	local ad = pack_ad(magic, reqtime, req.nonce)
-	req.tk = timekey(req.rx.smk, reqtime)
+	local cb = pack_cb(#p1, #pb)
+	local ad = pack_ad(req.reqtime, req.nonce)
+	req.tk = timekey(req.rx.smk, req.reqtime)
 	req.ecb = encrypt(req.tk, req.nonce, cb, 0, ad) -- ctr=0
 	assert(#req.ecb == ECBLEN)
 	if #pb > 0 then
@@ -147,13 +138,83 @@ local function make_req_ecb(req)
 	return req
 end
 
+local function get_reqtime_nonce(req, ecb)
+	-- allows to perform time and nonce validity checks before decrypting
+	-- ?? is it worthwhile? could just decrypt and check after...
+	-- anyway, don't check here!
+	req.reqtime, req.nonce = unpack_ad(ecb)
+	return req
+end
+
+local function unwrap_req_cb(req, ecb)
+	req.tk = timekey(req.rx.smk, req.reqtime)
+	local cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
+	if not cb then
+		return nil, "ecb decrypt error"
+	end
+	req.p1len, req.pblen = unpack_cb(cb)
+	assert(req.p1len <= req.pblen)
+	return req
+end
+
+local function unwrap_req_pb(req, epb)
+	local pb = decrypt(req.tk, req.nonce, epb, 1) -- ctr=1
+	if not pb then
+		return nil, "epb decrypt error"
+	end
+	-- next, split pb into p1, p2
+	-- (maybe could avoid a p1 copy, in case it is eg a file upload
+	--  do req.pb = pb and let app extract p1 from pb)
+	if req.p1len > 0 then
+		req.p2 = pb:sub(req.p1len +1)
+		req.p1 = pb:sub(1, req.p1len)
+	else
+		req.p2 = pb
+		req.p1 = ""
+	end
+	return req
+end
+
+local function wrap_resp(req)
+	local ercb, erpb, r, errmsg
+	local rpb = req.rpb or ""
+	req.ercb = encrypt(req.tk, req.nonce, 
+			pack_cb(req.rcode, #rpb), 2) -- ctr=2 
+	if #rpb > 0 then 
+		req.erpb = encrypt(req.tk, req.nonce, rpb, 3) -- ctr=3
+	end
+	return req
+end
+
+
+local function unwrap_resp_cb(req, ercb)
+	local rcb = decrypt(req.tk, req.nonce, ercb, 2) -- ctr=2
+	if not rcb then
+		return nil, "ercb decrypt error"
+	end
+	req.rcode, req.rpblen = unpack_cb(rcb)	
+	return req
+end
+
+local function unwrap_resp_pb(req, erpb)
+	req.rpb = decrypt(req.tk, req.nonce, erpb, 3) -- ctr=3
+	if not req.rpb then
+		return nil, "erpb decrypt error"
+	end
+	return req
+end
+
+
+------------------------------------------------------------------------
+-- client functions
+
 local function send_request(req)
 	local r, errmsg
 	req.server, errmsg = hesock.connect(req.rx.rawaddr)
 	if not req.server then 
 		return nil, errmsg
 	end
-	r = make_req_ecb(req)
+	r = wrap_req(req)
 	r, errmsg = req.server:write(req.ecb)
 	if not r then 
 		return nil, "cannot send ecb " .. repr(errmsg)
@@ -177,12 +238,10 @@ local function read_response(req)
 		errmsg = "read " .. repr(#ercb) .. " bytes"
 		return nil, "read ercb error " .. repr(errmsg)
 	end
-	rcb = decrypt(req.tk, req.nonce, ercb, 2) -- ctr=2
-	if not rcb then
-		return nil, "ercb decrypt error"
+	r, errmsg = unwrap_resp_cb(req, ercb)
+	if not r then
+		return nil, "unwrap_resp_cb error " .. repr(errmsg)
 	end
-	req.rcode, req.rpblen = unpack_cb(rcb)	
-	
 	-- now read rpb if any
 	if req.rpblen > 0 then 
 		local erpblen = req.rpblen + MACLEN
@@ -190,16 +249,13 @@ local function read_response(req)
 		if (not erpb) or #erpb < erpblen then
 			return nil, "cannot read erpb " .. repr(errmsg)
 		end
-		req.rpb = decrypt(req.tk, req.nonce, erpb, 3) -- ctr=3
-		if not req.rpb then
-			return nil, "erpb decrypt error"
+		r, errmsg = unwrap_resp_pb(req, erpb)
+		if not r then
+			return nil, "unwrap_resp_pb error"
 		end
 	end
 	return req
 end --read_resp()
-
-------------------------------------------------------------------------
--- client functions
 
 local function request_req(req)
 	-- send a pre-initialized request and read response
@@ -233,6 +289,7 @@ end --request()
 
 -----------------------------------------------------------------------
 -- SERVER
+
 
 -----------------------------------------------------------------------
 -- server - ban system and anti-replay and other utilities
@@ -292,6 +349,20 @@ local function used_nonce(req)
 	return r
 end
 
+
+-- max difference between request time and server time
+-- defined in server rxs.max_time_drift
+--
+local function time_is_valid(req)
+	return math.abs(os.time() - req.reqtime) < req.rx.max_time_drift
+end
+
+
+local function shell(s)
+	local r, exitcode = he.shell(s)
+	return r, exitcode
+end
+
 local function reject(req, msg1, msg2)
 	msg2 = msg2 or ""
 	-- the request is invalid
@@ -313,56 +384,6 @@ local function abort(req, msg1, msg2)
 	return false
 end
 
--- max difference between request time and server time
--- defined in server rxs.max_time_drift
-
-local function magic_is_valid(req)
-	return req.magic == req.rx.magic
-end
-
-local function time_is_valid(req)
-	return math.abs(os.time() - req.reqtime) < req.rx.max_time_drift
-end
-
---
-
-local function unwrap_req_ecb(req, ecb)
-	req.magic, req.reqtime, req.nonce = unpack_ad(ecb)
-	if not magic_is_valid(req) then 
-		return nil, "invalid req magic"
-	end
-	if not time_is_valid(req) then 
-		return nil, "invalid req time"
-	end
-	if used_nonce(req) then
-		return nil, "already used nonce"
-	end
-	req.tk = timekey(req.rx.smk, req.reqtime)
-	local cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
-	if not cb then
-		return nil, "ecb decrypt error"
-	end
-	req.p1len, req.pblen = unpack_cb(cb)
-	return req
-end
-
-local function unwrap_req_epb(req, epb)
-	local pb = decrypt(req.tk, req.nonce, epb, 1) -- ctr=1
-	if not pb then
-		return nil, "epb decrypt error"
-	end
-	-- next, split pb into p1, p2
-	-- (maybe could avoid a p1 copy, in case it is eg a file upload
-	--  do req.pb = pb and let app extract p1 from pb)
-	if req.p1len > 0 then
-		req.p2 = pb:sub(req.p1len +1)
-		req.p1 = pb:sub(1, req.p1len)
-	else
-		req.p2 = pb
-		req.p1 = ""
-	end
-	return req
-end
 
 local function read_request(req)
 	local cb, ecb, errmsg, epb, r
@@ -370,11 +391,18 @@ local function read_request(req)
 	if (not ecb) or #ecb < ECBLEN then
 		return reject(req, "cannot read req ecb", errmsg)
 	end
-	r, errmsg = unwrap_req_ecb(req, ecb)
+	get_reqtime_nonce(req, ecb)
+	if not time_is_valid(req) then 
+		return reject(req, "invalid req time")
+	end
+	if used_nonce(req) then
+		return reject(req, "already used nonce")
+	end
+	r, errmsg = unwrap_req_cb(req, ecb)
 	if not r then 
 		return reject(req, errmsg)
 	end
-	-- cb valid => can reset try-counter if set
+	-- req cb is valid => can reset try-counter if set
 	ban_counter_reset(req)
 	--
 	-- now read pb if any
@@ -384,9 +412,9 @@ local function read_request(req)
 		if (not epb) or #epb < epblen then
 			return abort(req, "cannot read req epb", errmsg)
 		end
-		r, errmsg = unwrap_req_epb(req, epb)
+		r, errmsg = unwrap_req_pb(req, epb)
 		if not r then
-			return abort(req, "epb decrypt error")
+			return abort(req, "unwrap_req_pb error")
 		end
 	else
 		-- in case p1 copy is optimized out, 
@@ -441,20 +469,15 @@ end
 
 local function send_response(req)
 	local ercb, erpb, r, errmsg
-	local rpb = req.rpb
-	req.ercb = encrypt(req.tk, req.nonce, 
-			pack_cb(req.rcode, #rpb), 2) -- ctr=2 
-	if #rpb > 0 then 
-		req.erpb = encrypt(req.tk, req.nonce, rpb, 3) -- ctr=3
-	end
+	r = wrap_resp(req)
 	r, errmsg = req.client:write(req.ercb)
 	if not r then
-		return abort(req, "send resp ercb", errmsg)
+		return abort(req, "send resp cb error", errmsg)
 	end
 	if req.erpb then
 		r, errmsg = req.client:write(req.erpb)
 		if not r then
-			return abort(req, "send resp erpb", errmsg)
+			return abort(req, "send resp pb error", errmsg)
 		end
 	end
 --~ 	print("sent response")
@@ -548,11 +571,12 @@ local rx = {
 	pack_cb = pack_cb,
 	unpack_cb = unpack_cb,
 	shell = shell,
-	make_req_ecb = make_req_ecb,
-	unwrap_req_ecb = unwrap_req_ecb,
-	unwrap_req_epb = unwrap_req_epb,
-	read_response = read_response,
-	send_request = send_request,
+	wrap_req = wrap_req,
+	unwrap_req_cb = unwrap_req_cb,
+	unwrap_req_pb = unwrap_req_pb,
+	wrap_req = wrap_req,
+	unwrap_resp_cb = unwrap_resp_cb,
+	unwrap_resp_pb = unwrap_resp_pb,
 	request_req = request_req,
 	request = request,
 	serve = serve,

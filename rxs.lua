@@ -17,33 +17,6 @@ package.path = "../he/?.lua;" .. package.path
 -- imports and local definitions
 
 local he = require 'he'
-local hefs = require 'hefs'
-local hezen = require 'hezen'
-local hepack = require 'hepack'
-
-local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
-local spack, sunpack = string.pack, string.unpack
-local ssplit = he.split
-local startswith, endswith = he.startswith, he.endswith
-local pp, ppl, ppt = he.pp, he.ppl, he.ppt
-
-local function px(s, msg) 
-	print("--", msg or "")
-	print(he.stohex(s, 16, " ")) 
-end
-
-
-local function repr(x)
-	return strf("%q", x) 
-end
-
-local function log(...)
-	print(he.isodate():sub(10), ...)
-end
-
-------------------------------------------------------------------------
--- run server
-
 rx = require 'rx'
 
 
@@ -54,24 +27,20 @@ rxs = {}
 rxs.rawaddr = '\2\0\x0c\x12\127\0\0\1\0\0\0\0\0\0\0\0'
 -- bind_address = '::1'    -- for ip6 localhost
 
--- server state
-rxs.must_exit = nil  -- server main loop exits if true 
-		     -- handlers can set it to an exit code
-		     -- convention: 0 for exit, 1 for exit+reload
-
+-- server state - server exits loop and returns rxs.must_exit
+-- if rxs.must_exit is true. (convention: 0 for exit, 1 for exit+reload)
+rxs.must_exit = nil
 
 rx.server_set_defaults(rxs)
 
--- debug_mode
--- true => request handler is executed without pcall()
---	   a handler error crashes the server
+-- debug_mode (true => request handler is executed without pcall()
+-- => a command handler error crashes the server)
 rxs.debug_mode = true
 
 rxs.log_already_banned = true
 
-
--- server master key4
+-- server master key
 rxs.smk = ('k'):rep(32)
 
-os.exit(rx.serve(rxs))
+os.exit(rx.serve(rxs)) -- exitcode is the value of rxs.must_exit
 
