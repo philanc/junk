@@ -129,11 +129,11 @@ end
 
 function test_3()  -- req in lua env 
 	-- req is the first chunk argument: ({...})[1]
-	cmd = "print(({...})[1])"
+	cmd = "return (({...})[1])"
 	rcode, rpb = rx.request(rxs, "", cmd)
-	print(111, repr(rcode), repr(rpb))
+--~ 	print(111, repr(rcode), repr(rpb))
 	assert(rcode==0)
---~ 	assert(rpb=="")
+--~ 	assert(rpb:match"table: 0x")
 	print("test_3:  ok")
 end
 
@@ -141,7 +141,6 @@ end
 function test_4()  -- kill server
 	cmd = "({...})[1].rx.must_exit = 0"
 	rcode, rpb = rx.request(rxs, "", cmd)
---~ 	print(111, repr(rcode), repr(rpb))
 	assert(rcode==0)
 	assert(rpb=="")
 	print("test_4:  ok")
@@ -188,13 +187,13 @@ end
 
 
 
---~ test_0() -- ping
---~ test_1() -- basic lua
---~ test_2() -- basic shell
---~ test_3() -- lua env
---~ test_4() -- kill server
+test_0() -- ping
+test_1() -- basic lua
+test_2() -- basic shell
+test_3() -- lua env
 --~ test_5() -- restart server
 test_6() -- upload / download
+test_4() -- kill server
 
 
 --[==[

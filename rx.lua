@@ -400,8 +400,12 @@ end --read_req()
 local function handle_cmd(req)
 	--
 --~ 	he.pp(req)
-	req.rx.log(strf("serving ip=%s port=%s", 
-		req.client_ip, tostring(req.client_port)))
+	local c = req.p2
+	c = (#c < 28) and c or (c:sub(1,28) .. "...")
+	c = c:gsub("%s+", " ")
+	req.rx.log(strf("ip=%s port=%s cmd=%s", 
+		req.client_ip, tostring(req.client_port), repr(c) ))
+		
 	-- if p2 is empty, return server time in rcode (server "ping")
 	if #req.p2 == 0 then
 		req.rcode = os.time()
@@ -499,6 +503,7 @@ local function serve(rxs)
 	local server = assert(hesock.bind(rxs.rawaddr))
 	rxs.log(strf("hehs bound to %s ", repr(rxs.rawaddr)))
 	print("getserverinfo(server)", hesock.getserverinfo(server, true))
+	
 --~ 	rx.must_exit = 1
 	while not rxs.must_exit do
 		client, msg = hesock.accept(server)
