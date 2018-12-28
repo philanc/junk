@@ -74,107 +74,127 @@ req = { rx = rxs }
 --~ px(req.ecb)
 --~ px(req.tk)
 
-local code, paux, pb
-local rcode, rpaux, rpb
-local r, msg
+local p1, p2, cmd, lua, sh
+local rcode, rpb
+local r, msg, exitcode
 
-function test_h0()
-	rcode, rpaux, rpb = rx.request(rxs, 0)
-	if rcode ~= 0 then 
-		print("test_h0: rcode error", 
-			repr(rcode), repr(rpaux), repr(rpb))
-	end
-	assert(rcode==0)
-	assert(rpaux==os.time())
+function test_0()  -- ping
+	rcode, rpb = rx.request(rxs, "", "")
+	assert(rcode==os.time())
 	assert(rpb=="")
-	print("test_h0:  ok")
+	print("test_0:  ok")
 end
 
-function test_h1()
-	rcode, rpaux, rpb = rx.request(rxs, 1)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
+function test_1()  -- basic lua
+	cmd = " x = 123 "  -- return nil
+	rcode, rpb = rx.request(rxs, "", cmd)
 	assert(rcode==0)
-	assert(rpaux==0)
-	local r2 = hepack.unpack(rpb)
---~ 	he.pp(r2)
-	assert(r2.reqtime == os.time())
-	print("test_h1:  ok")
-end
-
-function test_h2() --shell
-	pb = "ls /"
---~ 	pb = "ps aux"
-	rcode, rpaux, rpb = rx.request(rxs, 2, 0, pb)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
+	assert(rpb=="")
+	cmd = "return'hello' "  -- return string
+	rcode, rpb = rx.request(rxs, "", cmd)
 	assert(rcode==0)
---~ 	print('rpaux', rpaux)
-	assert(rpaux==0)
---~ 	print(rpb)
---~ 	print(rpb:gsub("\n", " "))
-	assert(rpb:match("\nvar"))
-	print("test_h2:  ok")
-end
-
-function test_h3() --lua
-	pb = [[
-	a = { ... }
-	req = a[1]
-	req.rpaux = req.paux * 3
-	return "ok"
-	]]
-	rcode, rpaux, rpb = rx.request(rxs, 3, 9, pb)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
-	assert(rcode==0)
-	assert(rpaux==27)
-	assert(rpb=="ok")
-	pb = [[  return nil, "some error" ]]
-	rcode, rpaux, rpb = rx.request(rxs, 3, 9, pb)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
+	assert(rpb=="hello")
+	cmd = " 3 + if "  -- syntax error
+	rcode, rpb = rx.request(rxs, "", cmd)
+	assert(rcode==999)
+	cmd = " return nil, 'some error' "  -- exec error
+	rcode, rpb = rx.request(rxs, "", cmd)
 	assert(rcode==1)
 	assert(rpb=="some error")
-	pb = [[  3 + return ]] --syntax error
-	rcode, rpaux, rpb = rx.request(rxs, 3, 9, pb)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
+--~ 	print(rpb)
+	cmd = [[ -- access req object
+	a = { ... }; req = a[1]
+	return req.rx.smk
+	]]
+	rcode, rpb = rx.request(rxs, "", cmd)
+	assert(rcode==0)
+	assert(rpb==rxs.smk)
+	print("test_1:  ok")
+end
+
+function test_2()  -- basic shell
+	lua = "return rx.shell([==[%s]==])"
+	sh = "ls /"
+	cmd = strf(lua, sh)
+	rcode, rpb = rx.request(rxs, "", cmd)
+	assert(rcode==0)
+	assert(rpb:match("\nvar"))
+	sh = "ls --zozo  2>&1 " -- invalid option, exitcode=2
+	cmd = strf(lua, sh)
+	rcode, rpb = rx.request(rxs, "", cmd)
 	assert(rcode==2)
-	print("test_h3:  ok")
+	assert(rpb:match("unrecognized option"))
+	print("test_2:  ok")
 end
 
-function test_h4()
-	rcode, rpaux, rpb = rx.request(rxs, 4)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
+function test_3()  -- req in lua env 
+	-- req is the first chunk argument: ({...})[1]
+	cmd = "print(({...})[1])"
+	rcode, rpb = rx.request(rxs, "", cmd)
+	print(111, repr(rcode), repr(rpb))
 	assert(rcode==0)
-	print("test_h4:  ok")
+--~ 	assert(rpb=="")
+	print("test_3:  ok")
 end
 
-function test_h5()
-	rcode, rpaux, rpb = rx.request(rxs, 5)
---~ 	print(repr(rcode), repr(rpaux), repr(rpb))
+
+function test_4()  -- kill server
+	cmd = "({...})[1].rx.must_exit = 0"
+	rcode, rpb = rx.request(rxs, "", cmd)
+--~ 	print(111, repr(rcode), repr(rpb))
 	assert(rcode==0)
-	print("test_h5:  ok")
+	assert(rpb=="")
+	print("test_4:  ok")
 end
 
-function test_h6_h7()
-	local fn, s = "/tmp/rxc-hello", he.isodate()
-	pb = spack("<s2s4", fn, s)
-	rcode, rpaux, rpb = rx.request(rxs, 7, 0, pb)
-	assert(rcode == 0)
-	assert(rpb == "")
-	rcode, rpaux, rpb = rx.request(rxs, 6, 0, fn)
-	assert(rcode == 0)
-	assert(rpb == s)
-	print("test_h6_h7:  ok")
+function test_5()  -- restart server
+	cmd = "({...})[1].rx.must_exit = 1"
+	rcode, rpb = rx.request(rxs, "", cmd)
+	assert(rcode==0)
+	assert(rpb=="")
+	print("test_5:  ok")
 end
-	
+
+function test_6()  -- upload / download
+	cmd = [[ --upload
+		req = ({...})[1]
+		he.fput("./zzhello", req.p1)
+	]]
+	p1 = "Hello, World!"
+	rcode, rpb = rx.request(rxs, p1, cmd)
+	assert(rcode==0)
+	assert(rpb=="")
+	cmd = [[ --download
+		req = ({...})[1]
+		s = he.fget("./zzhello")
+		os.remove("./zzhello")
+		return s
+	]]
+	rcode, rpb = rx.request(rxs, "", cmd)
+--~ 	print(111, repr(rcode), repr(rpb))
+	assert(rcode==0)
+	assert(rpb==p1)
+	cmd = [[ --test removed
+		req = ({...})[1]
+		s, msg = he.fget("./zzhello")
+		return s, msg
+	]]
+	rcode, rpb = rx.request(rxs, "", cmd)
+--~ 	print(111, repr(rcode), repr(rpb))
+	assert(rcode==1)
+	assert(rpb:match"No such file")
+	print("test_6:  ok")
+end
 
 
 
-test_h0() --ping
-test_h1() --echo req
-test_h2() --shell
-test_h3() --lua
---~ test_h4() -- kill server
---~ test_h5() -- restart server
-test_h6_h7() -- get / set remote file
+--~ test_0() -- ping
+--~ test_1() -- basic lua
+--~ test_2() -- basic shell
+--~ test_3() -- lua env
+--~ test_4() -- kill server
+--~ test_5() -- restart server
+test_6() -- upload / download
 
 
 --[==[

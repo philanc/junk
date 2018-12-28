@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 --[[ 
 
-=== rx
+=== rx v2
 
 
 ]]
@@ -45,7 +45,7 @@ end
 
 local function exec_lua(s, ...)
 	local chunk, r, errmsg 
-	chunk, errmsg = load(s, "chunk", "bt", _ENV)
+	chunk, errmsg = load(s, "lua_chunk")
 	if not chunk then
 		return nil, errmsg
 	end
@@ -84,8 +84,8 @@ end
 ------------------------------------------------------------------------
 
 
-local CBLEN = 16
-local ADLEN = 32
+local CBLEN = 8
+local ADLEN = 24
 local ECBLEN = ADLEN + CBLEN + MACLEN
 local ERCBLEN = CBLEN + MACLEN
 
@@ -102,12 +102,11 @@ local function timekey(mk, time)
 end
 
 
-local cb_fmt = "<I2I6I8" -- code, plen, paux
-local ad_fmt = "<I8I8c16" -- magic, reqtime, nonce
+local cb_fmt = "<I4I4" -- c1, c2
+local ad_fmt = "<I2I6c16" -- magic, reqtime, nonce
 
-local function pack_cb(code, pblen, paux)
-	paux = paux or 0
-	return spack(cb_fmt, code, pblen, paux)
+local function pack_cb(c1, c2)
+	return spack(cb_fmt, c1, c2)
 end
 
 local function unpack_cb(cb)
@@ -123,37 +122,25 @@ local function unpack_ad(ecb)
 	return magic, reqtime, nonce
 end
 
-local function disp_req(req)
-	print("req.code:", req.code)
-	print("req.paux:", req.paux)
-	print("req.pb:", repr(req.pb))
+local function shell(s)
+	local r, exitcode = he.shell(s)
+	return r, exitcode
 end
-
-local function disp_resp(req)
-	print("req.rcode:", req.rcode)
-	print("req.rpaux:", req.rpaux)
-	print("req.rpb:", repr(req.rpb))
-end
-
 
 ------------------------------------------------------------------------
 -- client utilities 
 
 
-local function make_req_ecb(req, code, pb, paux)
-	local paux = paux or req.paux
-	local pb = pb or req.pb
-	local code = code or req.code
+local function make_req_ecb(req)
+	local pb = req.p1 .. req.p2
 	local reqtime = req.reqtime or os.time()
 	local magic = req.magic or req.rx.magic
 	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
-	paux = paux or 0
-	pb = pb or ""
-	local cb = pack_cb(code, #pb, paux)
+	local cb = pack_cb(#req.p1, #pb)
 	local ad = pack_ad(magic, reqtime, req.nonce)
 	req.tk = timekey(req.rx.smk, reqtime)
 	req.ecb = encrypt(req.tk, req.nonce, cb, 0, ad) -- ctr=0
---~ 	assert(#req.ecb == ECBLEN)
+	assert(#req.ecb == ECBLEN)
 	if #pb > 0 then
 		req.epb = encrypt(req.tk, req.nonce, pb, 1) -- ctr=1
 	end
@@ -194,7 +181,7 @@ local function read_response(req)
 	if not rcb then
 		return nil, "ercb decrypt error"
 	end
-	req.rcode, req.rpblen, req.rpaux = unpack_cb(rcb)	
+	req.rcode, req.rpblen = unpack_cb(rcb)	
 	
 	-- now read rpb if any
 	if req.rpblen > 0 then 
@@ -229,24 +216,19 @@ local function request_req(req)
 	return req
 end --request_req()
 
-local function request(rxs, code, paux, pb)
+local function request(rxs, p1, p2)
 	local r, errmsg
-	pb = pb or ""
-	paux = paux or 0
 	local req = { 
 		rx = rxs,
-		code = code,
-		paux = paux,
-		pb = pb,
-		rpaux = 0,
+		p1 = p1, 
+		p2 = p2, 
 		rpb = "",
-		
 	}
 	r, errmsg = request_req(req)
 	if not r then 
 		return nil, errmsg
 	end
-	return req.rcode, req.rpaux, req.rpb
+	return req.rcode, req.rpb
 end --request()
 
 -----------------------------------------------------------------------
@@ -360,7 +342,7 @@ local function unwrap_req_ecb(req, ecb)
 	if not cb then
 		return nil, "ecb decrypt error"
 	end
-	req.code, req.pblen, req.paux = unpack_cb(cb)
+	req.p1len, req.pblen = unpack_cb(cb)
 	return req
 end
 
@@ -369,7 +351,16 @@ local function unwrap_req_epb(req, epb)
 	if not pb then
 		return nil, "epb decrypt error"
 	end
-	req.pb = pb
+	-- next, split pb into p1, p2
+	-- (maybe could avoid a p1 copy, in case it is eg a file upload
+	--  do req.pb = pb and let app extract p1 from pb)
+	if req.p1len > 0 then
+		req.p2 = pb:sub(req.p1len +1)
+		req.p1 = pb:sub(1, req.p1len)
+	else
+		req.p2 = pb
+		req.p1 = ""
+	end
 	return req
 end
 
@@ -397,6 +388,10 @@ local function read_request(req)
 		if not r then
 			return abort(req, "epb decrypt error")
 		end
+	else
+		-- in case p1 copy is optimized out, 
+		-- replace req.p1 with req.pb below
+		req.p1, req.p2 = "", ""
 	end
 	return req
 end --read_req()
@@ -404,34 +399,47 @@ end --read_req()
 
 local function handle_cmd(req)
 	--
-	req.rx.log(strf("serving code=%s ip=%s port=%s", 
-		tostring(req.code), 
+--~ 	he.pp(req)
+	req.rx.log(strf("serving ip=%s port=%s", 
 		req.client_ip, tostring(req.client_port)))
-	if req.code == 0 then 
-		-- "ping" - return server time in rpaux
-		-- (always processed, whatever the handlers table)
+	-- if p2 is empty, return server time in rcode (server "ping")
+	if #req.p2 == 0 then
+		req.rcode = os.time()
+		req.rpb = ""
+		return true
+	end
+	-- p2 is the lua cmd
+	local chunk, r, err
+	chunk, err = load(req.p2, "p2", "bt")
+	if not chunk then
+		req.rcode = 999
+		req.rpb = "invalid chunk: " .. err
+		return true
+	end
+	r, err = chunk(req)
+	if not r then
+		if err then
+			req.rcode = 1
+			req.rpb = tostring(err)
+		else
+			req.rcode = 0
+			req.rpb = ""
+		end
+	elseif math.type(err) == "integer" then
+		req.rcode = err
+		req.rpb = tostring(r)
+	else
 		req.rcode = 0
-		req.rpaux = os.time()
-		return true
+		req.rpb = tostring(r)
 	end
-	local handler = req.rx.handlers[req.code]
-	if not handler then
-		req.rcode = 99 -- "no handler"
-		req.rpaux = req.code
-		return true
-	end
-	req.rcode = 0	-- default value (assume handler exec was ok)
-			-- to be changed as needed by handler
-	handler(req)
 	return true
 end
 
 local function send_response(req)
-	-- tbd
 	local ercb, erpb, r, errmsg
-	local rpb = req.rpb or ""
+	local rpb = req.rpb
 	req.ercb = encrypt(req.tk, req.nonce, 
-		pack_cb(req.rcode, #rpb, req.rpaux), 2) -- ctr=2 
+			pack_cb(req.rcode, #rpb), 2) -- ctr=2 
 	if #rpb > 0 then 
 		req.erpb = encrypt(req.tk, req.nonce, rpb, 3) -- ctr=3
 	end
@@ -510,78 +518,8 @@ local function serve(rxs)
 	local r, msg = hesock.close(server)
 	rxs.log("hehs closed", r, msg)
 	local exitcode = rxs.must_exit
-	rxs.must_exit = nil  --WHY??
 	return exitcode
 end--server()
-
-------------------------------------------------------------------------
--- handlers
-
-local default_handlers = {}
-
-default_handlers[1] = function(req)
-	-- echo req
---~ 	he.pp(req)
-	req.rpb = hepack.pack(req, "repr")  --beware functions!
-end
-
-default_handlers[2] = function(req)
-	-- exec sh (basic)
-	local r, s = he.shell(req.pb)
-	req.rpb = r
-	req.rpaux = s
-end
-
-default_handlers[3] = function(req)
-	-- exec lua (basic)
---~ 	local r, errmsg = exec_lua(req.pb, req)
-	local s = req.pb
-	local chunk, r, errmsg 
-	chunk, errmsg = load(s, "req.pb", "bt")
-	if not chunk then
-		req.rcode = 2
-		req.rpb = "invalid chunk: " .. errmsg
-		return
-	end
-	r, errmsg = chunk(req)
-	if (not r) and errmsg then
-		req.rcode = 1
-		req.rpb = tostring(errmsg)
-	else
-		req.rpb = tostring(r)
-	end
-end
-
-default_handlers[4] = function(req)
-	-- kill server
-	req.rx.must_exit = 0
-end
-
-default_handlers[5] = function(req)
-	-- reload server
-	req.rx.must_exit = 1
-end
-
-default_handlers[6] = function(req)
-	-- simple get file
-	local r, errmsg = he.fget(req.pb)
-	if not r then
-		req.rcode = 1
-		req.rpb = errmsg
-	end
-	req.rpb = r
-end
-
-default_handlers[7] = function(req)
-	-- simple set/put file
-	local fn, s = sunpack("<s2s4", req.pb)
-	local r, errmsg = he.fput(fn , s)
-	if not r then
-		req.rcode = 1
-		req.rpb = errmsg
-	end
-end
-
 
 ------------------------------------------------------------------------
 -- default parameters
@@ -589,14 +527,12 @@ end
 local function server_set_defaults(rxs)
 	-- set some defaults values for a server
 	--	
-	rxs.magic = 0x0807060504030201 -- magic number for regular request
+	rxs.magic = 0x01 -- magic number for regular request
 	rxs.max_time_drift = 300 -- max secs between client and server time
 	rxs.ban_max_tries = 3  -- number of tries before being banned
 	rxs.log_rejected = true 
 	rxs.log_aborted = true
 	rxs.log = log
-	-- set default handlers
-	rxs.handlers = he.clone(default_handlers)
 	-- 
 end --server_set_defaults()
 
@@ -606,11 +542,10 @@ end --server_set_defaults()
 local rx = {
 	pack_cb = pack_cb,
 	unpack_cb = unpack_cb,
+	shell = shell,
 	make_req_ecb = make_req_ecb,
 	unwrap_req_ecb = unwrap_req_ecb,
 	unwrap_req_epb = unwrap_req_epb,
-	disp_req = disp_req,
-	disp_resp = disp_resp,
 	read_response = read_response,
 	send_request = send_request,
 	request_req = request_req,
