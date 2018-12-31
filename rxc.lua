@@ -3,8 +3,7 @@
 ------------------------------------------------------------------------
 --[[ 
 
-=== rxc
-
+=== rxc 
 
 ]]
 
@@ -16,205 +15,117 @@ package.path = "../he/?.lua;" .. package.path
 -- imports and local definitions
 
 --~ local he = require 'he'
-he = require 'he'
-local hefs = require 'hefs'
+he = require 'he'  -- make he global for request chunks
 local hezen = require 'hezen'
-local hepack = require 'hepack'
 local hesock = require 'hesock'
 
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
-local ssplit = he.split
-local startswith, endswith = he.startswith, he.endswith
-local pp, ppl, ppt = he.pp, he.ppl, he.ppt
 
 local function px(s, msg) 
 	print("--", msg or "")
 	print(he.stohex(s, 16, " ")) 
 end
 
-
 local function repr(x)
 	return strf("%q", x) 
 end
 
-local function log(...)
-	print(he.isodate():sub(10), ...)
-end
 
+------------------------------------------------------------------------
+-- common rx utilities
 
+local rx = require "rx"
+
+------------------------------------------------------------------------
+-- client functions
+
+local function send_request(req)
+	local r, errmsg
+	req.server, errmsg = hesock.connect(req.rx.rawaddr)
+	if not req.server then 
+		return nil, errmsg
+	end
+	r = rx.wrap_req(req)
+	r, errmsg = req.server:write(req.ecb)
+	if not r then 
+		return nil, "cannot send ecb " .. repr(errmsg)
+	end
+	if req.epb then 
+		r, errmsg = req.server:write(req.epb)
+		if not r then 
+			return nil, "cannot send epb " .. repr(errmsg)
+		end
+	end
+	return true
+end --send_request
+
+local function read_response(req)
+	local cb, ercb, rcb, erpb, rpb, r, errmsg
+	ercb, errmsg = req.server:read(rx.ERCBLEN)
+	if not ercb then
+		return nil, "read ercb error " .. repr(errmsg)
+	end
+	if #ercb < rx.ERCBLEN then
+		errmsg = "read " .. repr(#ercb) .. " bytes"
+		return nil, "read ercb error " .. repr(errmsg)
+	end
+	r, errmsg = rx.unwrap_resp_cb(req, ercb)
+	if not r then
+		return nil, "unwrap_resp_cb error " .. repr(errmsg)
+	end
+	-- now read rpb if any
+	if req.rpblen > 0 then 
+		local erpblen = req.rpblen + rx.MACLEN
+		erpb, errmsg = req.server:read(erpblen)
+		if (not erpb) or #erpb < erpblen then
+			return nil, "cannot read erpb " .. repr(errmsg)
+		end
+		r, errmsg = rx.unwrap_resp_pb(req, erpb)
+		if not r then
+			return nil, "unwrap_resp_pb error"
+		end
+	end
+	return req
+end --read_resp()
+
+local function request_req(req)
+	-- send a pre-initialized request and read response
+	-- allows to test specific params (reqtime, nonce, ...)
+	local r, errmsg
+	r, errmsg = send_request(req)
+	if not r then
+		return nil, errmsg
+	end
+	r, errmsg = read_response(req)
+	if not r then
+		return nil, errmsg
+	end
+	return req
+end --request_req()
+
+local function request(rxs, p1, p2)
+	local r, errmsg
+	local req = { 
+		rx = rxs,
+		p1 = p1, 
+		p2 = p2, 
+		rpb = "",
+	}
+	r, errmsg = request_req(req)
+	if not r then 
+		return nil, errmsg
+	end
+	return req.rcode, req.rpb
+end --request()
 
 
 ------------------------------------------------------------------------
--- rxc
+-- rxc module
 
-local rx = require 'rx'
+local rxc = {
+	request_req = request_req,
+	request = request,
+}
 
--- server info
-rxs = {}
-
-rx.server_set_defaults(rxs)
-
--- bind raw address  (localhost:3090)
-rxs.rawaddr = '\2\0\x0c\x12\127\0\0\1\0\0\0\0\0\0\0\0'
-rxs.addr = "127.0.0.1"
-rxs.port = 3090
--- bind_address = '::1'    -- for ip6 localhost
-
--- server master key
-rxs.smk = ('k'):rep(32)
-
--- prepare req
-
-req = { rx = rxs }
---~ req.reqtime = (1 << 30)|1
---~ req.nonce = ("`"):rep(16)
---~ r = rx.make_req_ecb(req, 3, "abcdef")
---~ r = rx.make_req_ecb(req, 3, nil, 10)
---~ px(req.ecb)
---~ px(req.tk)
-
-local p1, p2, cmd, lua, sh
-local rcode, rpb
-local r, msg, exitcode
-
-function test_0()  -- ping
-	rcode, rpb = rx.request(rxs, "", "")
-	assert(rcode==os.time())
-	assert(rpb=="")
-	print("test_0:  ok")
-end
-
-function test_1()  -- basic lua
-	cmd = " x = 123 "  -- return nil
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==0)
-	assert(rpb=="")
-	cmd = "return'hello' "  -- return string
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==0)
-	assert(rpb=="hello")
-	cmd = " 3 + if "  -- syntax error
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==999)
-	cmd = " return nil, 'some error' "  -- exec error
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==1)
-	assert(rpb=="some error")
---~ 	print(rpb)
-	cmd = [[ -- access req object
-	a = { ... }; req = a[1]
-	return req.rx.smk
-	]]
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==0)
-	assert(rpb==rxs.smk)
-	print("test_1:  ok")
-end
-
-function test_2()  -- basic shell
-	lua = "return rx.shell([==[%s]==])"
-	sh = "ls /"
-	cmd = strf(lua, sh)
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==0)
-	assert(rpb:match("\nvar"))
-	sh = "ls --zozo  2>&1 " -- invalid option, exitcode=2
-	cmd = strf(lua, sh)
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==2)
-	assert(rpb:match("unrecognized option"))
-	print("test_2:  ok")
-end
-
-function test_3()  -- req in lua env 
-	-- req is the first chunk argument: ({...})[1]
-	cmd = "return (({...})[1])"
-	rcode, rpb = rx.request(rxs, "", cmd)
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode==0)
---~ 	assert(rpb:match"table: 0x")
-	print("test_3:  ok")
-end
-
-
-function test_4()  -- kill server
-	cmd = "({...})[1].rx.must_exit = 0"
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==0)
-	assert(rpb=="")
-	print("test_4:  ok")
-end
-
-function test_5()  -- restart server
-	cmd = "({...})[1].rx.must_exit = 1"
-	rcode, rpb = rx.request(rxs, "", cmd)
-	assert(rcode==0)
-	assert(rpb=="")
-	print("test_5:  ok")
-end
-
-function test_6()  -- upload / download
-	cmd = [[ --upload
-		req = ({...})[1]
-		he.fput("./zzhello", req.p1)
-	]]
-	p1 = "Hello, World!"
-	rcode, rpb = rx.request(rxs, p1, cmd)
-	assert(rcode==0)
-	assert(rpb=="")
-	cmd = [[ --download
-		req = ({...})[1]
-		s = he.fget("./zzhello")
-		os.remove("./zzhello")
-		return s
-	]]
-	rcode, rpb = rx.request(rxs, "", cmd)
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode==0)
-	assert(rpb==p1)
-	cmd = [[ --test removed
-		req = ({...})[1]
-		s, msg = he.fget("./zzhello")
-		return s, msg
-	]]
-	rcode, rpb = rx.request(rxs, "", cmd)
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode==1)
-	assert(rpb:match"No such file")
-	print("test_6:  ok")
-end
-
-
-
-test_0() -- ping
-test_1() -- basic lua
-test_2() -- basic shell
-test_3() -- lua env
---~ test_5() -- restart server
-test_6() -- upload / download
-test_4() -- kill server
-
-
---[==[
-a=5
-
-if a == 0 then
-	print(rx.request(rxs, 3, 0, "for k,v in pairs(_ENV) do print(k,he.repr(v)) end "))
---~ 	print(rx.request(rxs, 3, 0, "local a={...}; he.pp(a[1].rx) "))
---~ 	print(rx.request(rxs, 3, 0, "local a={...}; he=require'he'; he.pp(a[1].rx) "))
---~ 	print(rx.request(rxs, 3, 0, "local a={...}; print(a[1].reqtime) "))
---~ 	print(rx.request(rxs, 3, 0, "print(123) "))
-elseif a == 1 then
-	req = { rx = rxs }
---~ 	req.reqtime = (1 << 30)|1
-	req.nonce = ("`"):rep(16)
-	req.code = 2
-	print(rx.request_req(req))
-	rx.disp_resp(req)
-elseif a == 5 then 
-	print(rx.request(rxs, 5))
-end
-
-]==]
-
+return rxc
