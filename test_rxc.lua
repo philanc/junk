@@ -133,7 +133,7 @@ end
 
 
 function test_4()  -- kill server
-	cmd = "({...})[1].rx.must_exit = 0"
+	cmd = "({...})[1].rx.exitcode = 1"
 	rcode, rpb = rxc.request(rxs, "", cmd)
 	assert(rcode==0)
 	assert(rpb=="")
@@ -141,7 +141,7 @@ function test_4()  -- kill server
 end
 
 function test_5()  -- restart server
-	cmd = "({...})[1].rx.must_exit = 1"
+	cmd = "({...})[1].rx.exitcode = 0"
 	rcode, rpb = rxc.request(rxs, "", cmd)
 	print(111, rcode, repr(rpb))
 	assert(rcode==0)

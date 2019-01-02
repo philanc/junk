@@ -14,12 +14,16 @@ trap 'exit 2' INT
 
 while /bin/true ;  do
 	lua -e "require'rxd'.test()" >> $logfile 2>&1
-	if [ "$?" == "0" ] ; then 
+	status="$?" 
+	if [ $status != "0" ] ; then 
 		break
 	fi
 	echo "rxs has exited. sleep 1, then restart."
 	sleep 1
 done
+
+exit $status
+
 
 
 

@@ -47,9 +47,10 @@ local rx = require "rx"
 
 
 -----------------------------------------------------------------------
--- server module
+-- the rx server object
+-- make it global (so it can be used in conf chunks)
+rxd = {}
 
-local rxd = {}
 
 -----------------------------------------------------------------------
 -- server - ban system and anti-replay and other utilities
@@ -270,7 +271,7 @@ local function serve_client(rx, client)
 end--serve_client()
 
 -- the server main loop
-function rxd.serve(rxs)
+local function serve(rxs)
 	-- server main loop:
 	-- 	wait for a client
 	--	call serve_client() to process client request
@@ -278,12 +279,15 @@ function rxd.serve(rxs)
 	local client, msg
 	init_ban_list(rxs)
 	init_used_nonce_list(rxs)
-	local server = assert(hesock.bind(rxs.rawaddr))
-	rxs.log(strf("hehs bound to %s ", repr(rxs.rawaddr)))
+	rxs.bind_rawaddr = rxs.bind_rawaddr or 
+		hesock.make_ipv4_sockaddr(rxs.bind_addr, rxs.port)
+	local server = assert(hesock.bind(rxs.bind_rawaddr))
+	rxs.log(strf("server bound to %s port %d", 
+		rxs.bind_addr, rxs.port))
 	print("getserverinfo(server)", hesock.getserverinfo(server, true))
 	
---~ 	rx.must_exit = 1
-	while not rxs.must_exit do
+--~ 	rxs.exitcode = 1
+	while not rxs.exitcode do
 		client, msg = hesock.accept(server)
 		if not client then
 			rxs.log("rx serve(): accept error", msg)
@@ -300,8 +304,7 @@ function rxd.serve(rxs)
 	-- TODO should be: 	close_all_clients(rxs)
 	local r, msg = hesock.close(server)
 	rxs.log("hehs closed", r, msg)
-	local exitcode = rxs.must_exit
-	return exitcode
+	return rxs.exitcode
 end--server()
 
 ------------------------------------------------------------------------
@@ -310,42 +313,71 @@ end--server()
 function rxd.set_defaults(rxs)
 	-- set some defaults values for a server
 	--	
-	rxs.max_time_drift = 300 -- max secs between client and server time
-	rxs.ban_max_tries = 3  -- number of tries before being banned
-	rxs.log_rejected = true 
-	rxs.log_aborted = true
-	rxs.log = log
+
 	-- 
-end --server_set_defaults()
+end --set_defaults()
 
 
 ------------------------------------------------------------------------
--- module utilities (for command chunks)
+-- server utilities 
 
-function rxd.shell(s)
+local function shell(s)
 	local r, exitcode = he.shell(s)
 	return r, exitcode
 end
 
+local function load_config()
+	local name, chunk, r, msg
+ 	-- name = arg[1] or rxd.config_filename
+	-- doesn't work with lua -e "require'rxd'.test()" 
+	-- arg[1] is "-e" :-(
+
+	name = rxd.config_filename
+	if not name then 
+		return nil, "no config file"
+	end
+	chunk, msg = loadfile(name)
+	if not chunk then
+		return nil, msg
+	end
+	r, msg = pcall(chunk)
+	if not r then
+		return nil, "config file execution error"
+	end
+	return true
+end
+	
 
 ------------------------------------------------------------------------
--- rxd simple test
--- keep it after module table. 'rxd' must be known in test()
+-- run server
 
-function rxd.test()
-	_G.rxd = rxd  -- make it global for command chunks
-	local server = {}
-	rxd.set_defaults(server)
-	-- bind to localhost, port 4096 (0x1000 => \16\0)
---~ 	server.rawaddr = '\2\0\16\0\127\0\0\1\0\0\0\0\0\0\0\0'
-	server.rawaddr = hesock.make_ipv4_sockaddr('127.0.0.1', 4096)
-	server.debug_mode = true
-	server.log_already_banned = true
-	server.smk = ('k'):rep(32)
-	os.exit(rxd.serve(server))
+-- default functions
+rxd.log = log
+rxd.shell = shell -- "execute a shell command" 
+
+
+-- set default server parameters
+rxd.max_time_drift = 300 -- max secs between client and server time
+rxd.ban_max_tries = 3  -- number of tries before being banned
+rxd.log_rejected = true 
+rxd.log_aborted = true
+rxd.debug_mode = true
+rxd.log_already_banned = true
+
+-- load config
+rxd.config_filename="./rxd.conf.lua"
+local r, msg = load_config()
+if not r then
+	rxd.log("rxd load_config error: " .. msg)
+	print("rxd load_config error", msg)
+	os.exit(2)
 end
 
 
 
--- return module
-return rxd
+-- serve() return value can be used by a wrapping script to either
+-- stop or restart the server. convention is to restart server if 
+-- exitcode is 0.
+os.exit(serve(rxd))
+
+
