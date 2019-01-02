@@ -51,10 +51,16 @@ local function send_request(req)
 	if not r then 
 		return nil, "cannot send ecb " .. repr(errmsg)
 	end
-	if req.epb then 
-		r, errmsg = req.server:write(req.epb)
+	if req.ep1 then 
+		r, errmsg = req.server:write(req.ep1)
 		if not r then 
-			return nil, "cannot send epb " .. repr(errmsg)
+			return nil, "cannot send ep1 " .. repr(errmsg)
+		end
+	end
+	if req.ep2 then 
+		r, errmsg = req.server:write(req.ep2)
+		if not r then 
+			return nil, "cannot send ep2 " .. repr(errmsg)
 		end
 	end
 	return true
@@ -108,8 +114,8 @@ local function request(rxs, p1, p2)
 	local r, errmsg
 	local req = { 
 		rxs = rxs,
-		p1 = p1, 
-		p2 = p2, 
+		p1 = p1 or "", 
+		p2 = p2 or "", 
 		rpb = "",
 	}
 	r, errmsg = request_req(req)

@@ -35,6 +35,7 @@ end
 ------------------------------------------------------------------------
 -- common utilities
 
+local VERSION = "0.3"
 
 ------------------------------------------------------------------------
 -- encryption
@@ -100,19 +101,21 @@ end
 
 local function wrap_req(req)
 	-- after exec, encrypted control block is req.ecb
-	-- if needed, encrypted param block is req.epb
+	-- if needed, encrypted param blocks are req.ep1 and req.ep2
 	local p1 = req.p1 or ""
 	local p2 = req.p2 or ""
-	local pb = p1 .. p2
 	req.reqtime = req.reqtime or os.time()
 	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
-	local cb = pack_cb(#p1, #pb)
+	local cb = pack_cb(#p1, #p2)
 	local ad = pack_ad(req.reqtime, req.nonce)
 	req.tk = timekey(req.rxs.smk, req.reqtime)
 	req.ecb = encrypt(req.tk, req.nonce, cb, 0, ad) -- ctr=0
 	assert(#req.ecb == ECBLEN)
-	if #pb > 0 then
-		req.epb = encrypt(req.tk, req.nonce, pb, 1) -- ctr=1
+	if #p1 > 0 then
+		req.ep1 = encrypt(req.tk, req.nonce, p1, 1) -- ctr=1
+	end
+	if #p2 > 0 then
+		req.ep2 = encrypt(req.tk, req.nonce, p2, 2) -- ctr=2
 	end
 	return req
 end
@@ -131,26 +134,29 @@ local function unwrap_req_cb(req, ecb)
 	if not cb then
 		return nil, "ecb decrypt error"
 	end
-	req.p1len, req.pblen = unpack_cb(cb)
-	assert(req.p1len <= req.pblen)
+	req.p1len, req.p2len = unpack_cb(cb)
 	return req
 end
 
-local function unwrap_req_pb(req, epb)
-	local pb = decrypt(req.tk, req.nonce, epb, 1) -- ctr=1
-	if not pb then
-		return nil, "epb decrypt error"
-	end
-	-- next, split pb into p1, p2
-	-- (maybe could avoid a p1 copy, in case it is eg a file upload
-	--  do req.pb = pb and let app extract p1 from pb)
-	if req.p1len > 0 then
-		req.p2 = pb:sub(req.p1len +1)
-		req.p1 = pb:sub(1, req.p1len)
-	else
-		req.p2 = pb
+local function unwrap_req_pb(req, ep1, ep2)
+	if ep1 then
+		req.p1 = decrypt(req.tk, req.nonce, ep1, 1) -- ctr=1
+		if not req.p1 then
+			return nil, "ep1 decrypt error"
+		end
+	else 
 		req.p1 = ""
 	end
+	assert(#req.p1 == req.p1len)
+	if ep2 then
+		req.p2 = decrypt(req.tk, req.nonce, ep2, 2) -- ctr=2
+		if not req.p2 then
+			return nil, "ep2 decrypt error"
+		end
+	else 
+		req.p2 = ""
+	end
+	assert(#req.p2 == req.p2len)
 	return req
 end
 
@@ -158,16 +164,16 @@ local function wrap_resp(req)
 	local ercb, erpb, r, errmsg
 	local rpb = req.rpb or ""
 	req.ercb = encrypt(req.tk, req.nonce, 
-			pack_cb(req.rcode, #rpb), 2) -- ctr=2 
+			pack_cb(req.rcode, #rpb), 3) -- ctr=3 
 	if #rpb > 0 then 
-		req.erpb = encrypt(req.tk, req.nonce, rpb, 3) -- ctr=3
+		req.erpb = encrypt(req.tk, req.nonce, rpb, 4) -- ctr=4
 	end
 	return req
 end
 
 
 local function unwrap_resp_cb(req, ercb)
-	local rcb = decrypt(req.tk, req.nonce, ercb, 2) -- ctr=2
+	local rcb = decrypt(req.tk, req.nonce, ercb, 3) -- ctr=3
 	if not rcb then
 		return nil, "ercb decrypt error"
 	end
@@ -176,7 +182,7 @@ local function unwrap_resp_cb(req, ercb)
 end
 
 local function unwrap_resp_pb(req, erpb)
-	req.rpb = decrypt(req.tk, req.nonce, erpb, 3) -- ctr=3
+	req.rpb = decrypt(req.tk, req.nonce, erpb, 4) -- ctr=4
 	if not req.rpb then
 		return nil, "erpb decrypt error"
 	end
@@ -201,6 +207,8 @@ local rx = {
 	MACLEN = MACLEN,
 	ECBLEN = ECBLEN,
 	ERCBLEN = ERCBLEN,
+	
+	VERSION = VERSION,
 }
 
 return rx

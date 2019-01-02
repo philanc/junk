@@ -142,7 +142,7 @@ end
 
 
 local function read_request(req)
-	local cb, ecb, errmsg, epb, r
+	local cb, ecb, errmsg, ep1, ep2, r
 	ecb, errmsg = req.client:read(rx.ECBLEN)
 	if (not ecb) or #ecb < rx.ECBLEN then
 		return reject(req, "cannot read req ecb", errmsg)
@@ -161,21 +161,25 @@ local function read_request(req)
 	-- req cb is valid => can reset try-counter if set
 	ban_counter_reset(req)
 	--
-	-- now read pb if any
-	if req.pblen > 0 then 
-		local epblen = req.pblen + rx.MACLEN
-		epb, errmsg = req.client:read(epblen)
-		if (not epb) or #epb < epblen then
-			return abort(req, "cannot read req epb", errmsg)
+	-- now read p1, p2 if any
+	if req.p1len > 0 then 
+		local ep1len = req.p1len + rx.MACLEN
+		ep1, errmsg = req.client:read(ep1len)
+		if (not ep1) or #ep1 < ep1len then
+			return abort(req, "cannot read req ep1", errmsg)
 		end
-		r, errmsg = rx.unwrap_req_pb(req, epb)
-		if not r then
-			return abort(req, "unwrap_req_pb error")
+	end
+	if req.p2len > 0 then 
+		local ep2len = req.p2len + rx.MACLEN
+		ep2, errmsg = req.client:read(ep2len)
+		if (not ep2) or #ep2 < ep2len then
+			return abort(req, "cannot read req ep2", errmsg)
 		end
-	else
-		-- in case p1 copy is optimized out, 
-		-- replace req.p1 with req.pb below
-		req.p1, req.p2 = "", ""
+	end
+	-- decrypt ep1, ep2 if any	
+	r, errmsg = rx.unwrap_req_pb(req, ep1, ep2)
+	if not r then
+		return abort(req, "unwrap_req_pb error")
 	end
 	return req
 end --read_req()
@@ -184,21 +188,21 @@ end --read_req()
 local function handle_cmd(req)
 	--
 --~ 	he.pp(req)
-	local c = req.p2
+	local c = req.p1
 	c = (#c < 28) and c or (c:sub(1,28) .. "...")
 	c = c:gsub("%s+", " ")
 	req.rxs.log(strf("ip=%s port=%s cmd=%s", 
 		req.client_ip, tostring(req.client_port), repr(c) ))
 		
-	-- if p2 is empty, return server time in rcode (server "ping")
-	if #req.p2 == 0 then
+	-- if p1 is empty, return server time in rcode (server "ping")
+	if #req.p1 == 0 then
 		req.rcode = os.time()
 		req.rpb = ""
 		return true
 	end
-	-- p2 is the lua cmd
+	-- p1 is the lua cmd
 	local chunk, r, err
-	chunk, err = load(req.p2, "p2", "bt")
+	chunk, err = load(req.p1, "p1", "bt")
 	if not chunk then
 		req.rcode = 999
 		req.rpb = "invalid chunk: " .. err
