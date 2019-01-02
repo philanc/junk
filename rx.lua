@@ -108,7 +108,7 @@ local function wrap_req(req)
 	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
 	local cb = pack_cb(#p1, #pb)
 	local ad = pack_ad(req.reqtime, req.nonce)
-	req.tk = timekey(req.rx.smk, req.reqtime)
+	req.tk = timekey(req.rxs.smk, req.reqtime)
 	req.ecb = encrypt(req.tk, req.nonce, cb, 0, ad) -- ctr=0
 	assert(#req.ecb == ECBLEN)
 	if #pb > 0 then
@@ -126,7 +126,7 @@ local function get_reqtime_nonce(req, ecb)
 end
 
 local function unwrap_req_cb(req, ecb)
-	req.tk = timekey(req.rx.smk, req.reqtime)
+	req.tk = timekey(req.rxs.smk, req.reqtime)
 	local cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
 	if not cb then
 		return nil, "ecb decrypt error"

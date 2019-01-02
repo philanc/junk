@@ -58,55 +58,55 @@ rxd = {}
 
 local function check_not_banned(req)
 	local r
-	r = req.rx.whitelist[req.client_ip]
+	r = req.rxs.whitelist[req.client_ip]
 	if r then 
 		-- (whitelist overrides banned list)
 		return r 
 	end
-	r = not req.rx.banned_ip_tbl[req.client_ip]
+	r = not req.rxs.banned_ip_tbl[req.client_ip]
 	if not r then
-		he.incr(req.rx.banned_ip_tbl, req.client_ip)
-		if req.rx.log_already_banned then 
+		he.incr(req.rxs.banned_ip_tbl, req.client_ip)
+		if req.rxs.log_already_banned then 
 			log("already banned ip, tries", 
 			    req.client_ip,
-			    req.rx.banned_ip_tbl[req.client_ip])
+			    req.rxs.banned_ip_tbl[req.client_ip])
 		end
 	end
 	return r
 end
 	
 local function ban_if_needed(req)
-	local tries = he.incr(req.rx.ban_tries, req.client_ip)
-	if tries > req.rx.ban_max_tries then
-		he.incr(req.rx.banned_ip_tbl, req.client_ip)
-		req.rx.log("BANNED", req.client_ip)
+	local tries = he.incr(req.rxs.ban_tries, req.client_ip)
+	if tries > req.rxs.ban_max_tries then
+		he.incr(req.rxs.banned_ip_tbl, req.client_ip)
+		req.rxs.log("BANNED", req.client_ip)
 	end
 end
 
 local function ban_counter_reset(req)
 	-- clear the try-counter (after a valid request)
-	req.rx.ban_tries[req.client_ip] = nil
+	req.rxs.ban_tries[req.client_ip] = nil
 	-- auto whitelist
-	req.rx.whitelist[req.client_ip] = true
+	req.rxs.whitelist[req.client_ip] = true
 end
 
-local function init_ban_list(rx)
+local function init_ban_list(rxs)
 	-- ATM, start with empty lists
-	rx.ban_tries = {}
-	rx.banned_ip_tbl = {}
-	rx.whitelist = {}
+	rxs.ban_tries = {}
+	rxs.banned_ip_tbl = {}
+	rxs.whitelist = {}
 end
 	
-local function init_used_nonce_list(rx)
+local function init_used_nonce_list(rxs)
 	-- ATM, start with empty list
-	rx.nonce_tbl = {}
+	rxs.nonce_tbl = {}
 end
 	
 local function used_nonce(req)
 	-- determine if nonce has recently been used
 	-- then set it to used
-	local  r = req.rx.nonce_tbl[req.nonce]
-	req.rx.nonce_tbl[req.nonce] = true
+	local  r = req.rxs.nonce_tbl[req.nonce]
+	req.rxs.nonce_tbl[req.nonce] = true
 	return r
 end
 
@@ -115,7 +115,7 @@ end
 -- defined in server rxs.max_time_drift
 --
 local function time_is_valid(req)
-	return math.abs(os.time() - req.reqtime) < req.rx.max_time_drift
+	return math.abs(os.time() - req.reqtime) < req.rxs.max_time_drift
 end
 
 
@@ -124,8 +124,8 @@ local function reject(req, msg1, msg2)
 	-- the request is invalid
 	
 	ban_if_needed(req)
-	if req.rx.log_rejected then
-		req.rx.log("REJECTED", req.client_ip, msg1, msg2)
+	if req.rxs.log_rejected then
+		req.rxs.log("REJECTED", req.client_ip, msg1, msg2)
 	end
 	-- close the client connection
 	return false
@@ -134,8 +134,8 @@ end
 local function abort(req, msg1, msg2)
 	-- the request is valid but someting went wrong
 	-- close the client connection
-	if req.rx.log_aborted then
-		req.rx.log("ABORTED", req.client_ip, msg1, msg2)
+	if req.rxs.log_aborted then
+		req.rxs.log("ABORTED", req.client_ip, msg1, msg2)
 	end
 	return false
 end
@@ -187,7 +187,7 @@ local function handle_cmd(req)
 	local c = req.p2
 	c = (#c < 28) and c or (c:sub(1,28) .. "...")
 	c = c:gsub("%s+", " ")
-	req.rx.log(strf("ip=%s port=%s cmd=%s", 
+	req.rxs.log(strf("ip=%s port=%s cmd=%s", 
 		req.client_ip, tostring(req.client_port), repr(c) ))
 		
 	-- if p2 is empty, return server time in rcode (server "ping")
@@ -243,7 +243,7 @@ end --send_response()
 ------------------------------------------------------------------------
 -- main server functions
 
-local function serve_client(rx, client)
+local function serve_client(rxs, client)
 	-- process a client request:
 	--    get a request from the client socket
 	--    call the command handler
@@ -254,7 +254,7 @@ local function serve_client(rx, client)
 	local r, errmsg
 	local client_ip, client_port = hesock.getclientinfo(client, true)
 	local req = {
-		rx = rx, 
+		rxs = rxs, 
 		client = client,
 		client_ip = client_ip, 
 		client_port = client_port,
@@ -265,7 +265,7 @@ local function serve_client(rx, client)
 	    and send_response(req)
 
 --~ 	if r then
---~ 		rx.log("served client", req.client_ip, req.client_port)
+--~ 		rxs.log("served client", req.client_ip, req.client_port)
 --~ 	end
 	hesock.close(client) 
 end--serve_client()
@@ -276,7 +276,7 @@ local function serve(rxs)
 	-- 	wait for a client
 	--	call serve_client() to process client request
 	--	rinse, repeat
-	local client, msg
+	local client, r, msg
 	init_ban_list(rxs)
 	init_used_nonce_list(rxs)
 	rxs.bind_rawaddr = rxs.bind_rawaddr or 
@@ -297,7 +297,10 @@ local function serve(rxs)
 			serve_client(rxs, client) 
 --~ 			rxs.log("client closed.", client)
 		else
-			pcall(serve_client, rxs, client)
+			r, msg = pcall(serve_client, rxs, client)
+			if not r then
+				rxs.log("serve_client error", msg)
+			end
 		end
 	end--while
 	if client then hesock.close(client); client = nil end

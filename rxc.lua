@@ -42,7 +42,7 @@ local rx = require "rx"
 
 local function send_request(req)
 	local r, errmsg
-	req.server, errmsg = hesock.connect(req.rx.rawaddr)
+	req.server, errmsg = hesock.connect(req.rxs.rawaddr)
 	if not req.server then 
 		return nil, errmsg
 	end
@@ -107,7 +107,7 @@ end --request_req()
 local function request(rxs, p1, p2)
 	local r, errmsg
 	local req = { 
-		rx = rxs,
+		rxs = rxs,
 		p1 = p1, 
 		p2 = p2, 
 		rpb = "",

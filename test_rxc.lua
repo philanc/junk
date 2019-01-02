@@ -60,7 +60,7 @@ rxs.smk = ('k'):rep(32)
 
 -- prepare req
 
-req = { rx = rxs }
+req = { rxs = rxs }
 --~ req.reqtime = (1 << 30)|1
 --~ req.nonce = ("`"):rep(16)
 --~ r = rx.make_req_ecb(req, 3, "abcdef")
@@ -98,7 +98,7 @@ function test_1()  -- basic lua
 --~ 	print(rpb)
 	cmd = [[ -- access req object
 	a = { ... }; req = a[1]
-	return req.rx.smk
+	return req.rxs.smk
 	]]
 	rcode, rpb = rxc.request(rxs, "", cmd)
 	assert(rcode==0)
@@ -133,7 +133,7 @@ end
 
 
 function test_4()  -- kill server
-	cmd = "({...})[1].rx.exitcode = 1"
+	cmd = "({...})[1].rxs.exitcode = 1"
 	rcode, rpb = rxc.request(rxs, "", cmd)
 	assert(rcode==0)
 	assert(rpb=="")
@@ -141,7 +141,7 @@ function test_4()  -- kill server
 end
 
 function test_5()  -- restart server
-	cmd = "({...})[1].rx.exitcode = 0"
+	cmd = "({...})[1].rxs.exitcode = 0"
 	rcode, rpb = rxc.request(rxs, "", cmd)
 	print(111, rcode, repr(rpb))
 	assert(rcode==0)
