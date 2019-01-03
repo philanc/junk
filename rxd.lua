@@ -202,13 +202,16 @@ local function handle_cmd(req)
 	end
 	-- p1 is the lua cmd
 	local chunk, r, err
-	chunk, err = load(req.p1, "p1", "bt")
+	-- define req as local in chunk
+	-- (req is the first arg passed to chunk, chunk args is '...')
+	local cmd = "local req = ({...})[1]; " .. req.p1
+	chunk, err = load(cmd, "cmd", "bt")
 	if not chunk then
 		req.rcode = 999
 		req.rpb = "invalid chunk: " .. err
 		return true
 	end
-	r, err = chunk(req)
+	r, err = chunk(req) -- must pass req to chunk
 	if not r then
 		if err then
 			req.rcode = 1

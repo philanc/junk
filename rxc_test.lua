@@ -89,7 +89,9 @@ end
 --~ cmd = "return nil, 'some error'"
 --~ cmd = "return 123"
 --~ cmd = "return he.stohex(req.nonce) if"
---~ r, msg = rxc.run_basic_lua(rxs, cmd, "hello")
+--~ r, msg = rxc.file_upload(rxs, "./zzhello", "Hello, upload!")
+--~ print(222, repr(r), repr(msg))
+--~ r, msg = rxc.file_download(rxs, "./zzhello")
 --~ print(222, repr(r), repr(msg))
 --~ os.exit()
 
@@ -138,7 +140,8 @@ function test_3()  -- run_basic_lua
 	r, msg = rxc.run_basic_lua(rxs, "return req.p2", "hello")
 	assert(r=="hello")
 	assert(msg==nil)
-	r, msg = rxc.run_basic_lua(rxs, "end if do") -- syntax error
+	-- syntax error and a comment
+	r, msg = rxc.run_basic_lua(rxs, "end if do", "", "syntax error")
 	assert(r==nil)
 	assert(msg:match("invalid chunk"))
 	-- return error with string msg
@@ -153,38 +156,34 @@ function test_3()  -- run_basic_lua
 end
 
 function test_4()  -- kill server
-	r, msg = rxc.run_basic_lua(rxs, "req.rxs.exitcode = 1")
+	r, msg = rxc.run_basic_lua(rxs, 
+		"rxd.exitcode = 1", "", "stop server")
 	assert(r=="")
 	assert(msg==nil)
 	print("test_4:  ok")
 end
 
 function test_5()  -- restart server
-	r, msg = rxc.run_basic_lua(rxs, "rxd.exitcode = 0")
+	r, msg = rxc.run_basic_lua(rxs, 
+		"rxd.exitcode = 0", "", "restart server")
 	assert(r=="")
 	assert(msg==nil)
 	print("test_5:  ok")
 end
 
 function test_6()  -- upload / download
-	cmd = [[ --upload
-		req = ({...})[1]
-		he.fput("./zzhello", req.p2)
-	]]
-	p2 = "Hello, World!"
-	rcode, rpb = rxc.request(rxs, cmd, p2)
-	assert(rcode==0)
-	assert(rpb=="")
-	cmd = [[ --download
-		req = ({...})[1]
-		s = he.fget("./zzhello")
-		os.remove("./zzhello")
-		return s
-	]]
-	rcode, rpb = rxc.request(rxs, cmd, "")
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode==0)
-	assert(rpb==p2)
+	r, msg = rxc.file_upload(rxs, "./zzhello", "Hello, upload!")
+	assert(r=="")
+	assert(msg==nil)
+	r, msg = rxc.file_download(rxs, "./zzhello")
+--~ 	print(222, repr(r), repr(msg))
+	assert(r=="Hello, upload!")
+	assert(msg==nil)
+	-- remove the file
+	cmd = [[os.remove"./zzhello"]]
+	r, msg = rxc.run_basic_lua(rxs, cmd, "", "remove")
+	assert(r=="")
+	assert(msg==nil)
 	cmd = [[ --test removed
 		req = ({...})[1]
 		s, msg = he.fget("./zzhello")

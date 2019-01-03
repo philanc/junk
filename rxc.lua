@@ -136,20 +136,19 @@ function rxc.run_basic_shell(rxs, sh)
 	-- stdout is returned  
 	-- (use 2>&1 to also get stderr)
 	--
-	local luacmd = "return rxd.shell([===[" .. sh .. "]===])"
+	local luacmd = "return rxd.shell[=[" .. sh .. "]=]"
 	local rcode, rpb = rxc.request(rxs, luacmd, "")
 	return rcode, rpb
 end
 
-function rxc.run_basic_lua(rxs, lua, p2)
+function rxc.run_basic_lua(rxs, luacmd, p2)
 	-- run a lua chunk
-	-- a local 'req' is defined for the chunk.
+	-- (the server defines a local 'req' in the chunk)
 	-- the chunk should return one value or nil, err
 	-- this function returns tostring(value) or nil, err
 	-- p2 is an optional string (defaults to "").
 	-- p2 can be accessed in the chunk as req.p2
 	--
-	local luacmd = "local req=({...})[1]; " .. lua
 	local rcode, rpb = rxc.request(rxs, luacmd, p2)
 	if not rcode or rcode > 0 then 
 		-- rcode==nil: connection/protocol error
@@ -159,6 +158,18 @@ function rxc.run_basic_lua(rxs, lua, p2)
 	return rpb
 end
 
+function rxc.file_upload(rxs, fname, content)
+	local lua = strf("he.fput([=[%s]=], req.p2)", fname)
+	return rxc.run_basic_lua(rxs, lua, content)
+end
+
+function rxc.file_download(rxs, fname)
+	local lua = strf("return he.fget([=[%s]=])", fname)
+	return rxc.run_basic_lua(rxs, lua)
+end
+
+
+	
 ------------------------------------------------------------------------
 -- return module
 
