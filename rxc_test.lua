@@ -92,6 +92,9 @@ end
 --~ r, msg = rxc.file_upload(rxs, "./zzhello", "Hello, upload!")
 --~ print(222, repr(r), repr(msg))
 --~ r, msg = rxc.file_download(rxs, "./zzhello")
+
+--~ cmd=[[export ZZAA="Zaaaaa" ; exec sh -c 'echo "env: $ZZAA" ' ]]
+--~ r, msg = rxc.run_basic_shell(rxs, cmd)
 --~ print(222, repr(r), repr(msg))
 --~ os.exit()
 
@@ -140,8 +143,8 @@ function test_3()  -- run_basic_lua
 	r, msg = rxc.run_basic_lua(rxs, "return req.p2", "hello")
 	assert(r=="hello")
 	assert(msg==nil)
-	-- syntax error and a comment
-	r, msg = rxc.run_basic_lua(rxs, "end if do", "", "syntax error")
+	-- syntax error
+	r, msg = rxc.run_basic_lua(rxs, "end if do")
 	assert(r==nil)
 	assert(msg:match("invalid chunk"))
 	-- return error with string msg
