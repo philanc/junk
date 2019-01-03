@@ -7,9 +7,6 @@
 
 ]]
 
-------------------------------------------------------------------------
--- tmp path adjustment
-package.path = "../he/?.lua;" .. package.path
 
 ------------------------------------------------------------------------
 -- imports and local definitions
@@ -95,7 +92,13 @@ local function read_response(req)
 	return req
 end --read_resp()
 
-local function request_req(req)
+------------------------------------------------------------------------
+-- rxc module and functions
+
+local rxc = {}
+
+
+function rxc.request_req(req)
 	-- send a pre-initialized request and read response
 	-- allows to test specific params (reqtime, nonce, ...)
 	local r, errmsg
@@ -110,7 +113,7 @@ local function request_req(req)
 	return req
 end --request_req()
 
-local function request(rxs, p1, p2)
+function rxc.request(rxs, p1, p2)
 	local r, errmsg
 	local req = { 
 		rxs = rxs,
@@ -118,20 +121,45 @@ local function request(rxs, p1, p2)
 		p2 = p2 or "", 
 		rpb = "",
 	}
-	r, errmsg = request_req(req)
+	r, errmsg = rxc.request_req(req)
 	if not r then 
 		return nil, errmsg
 	end
 	return req.rcode, req.rpb
 end --request()
 
+------------------------------------------------------------------------
+-- remote execution commands
+
+function rxc.run_basic_shell(rxs, sh)
+	-- run a simple shell command with no stdin
+	-- stdout is returned  
+	-- (use 2>&1 to also get stderr)
+	--
+	local luacmd = "return rxd.shell([===[" .. sh .. "]===])"
+	local rcode, rpb = rxc.request(rxs, luacmd, "")
+	return rcode, rpb
+end
+
+function rxc.run_basic_lua(rxs, lua, p2)
+	-- run a lua chunk
+	-- a local 'req' is defined for the chunk.
+	-- the chunk should return one value or nil, err
+	-- this function returns tostring(value) or nil, err
+	-- p2 is an optional string (defaults to "").
+	-- p2 can be accessed in the chunk as req.p2
+	--
+	local luacmd = "local req=({...})[1]; " .. lua
+	local rcode, rpb = rxc.request(rxs, luacmd, p2)
+	if not rcode or rcode > 0 then 
+		-- rcode==nil: connection/protocol error
+		-- rcode==1: the lua chunk returned nil, err (rpb=err)
+		return nil, rpb 
+	end
+	return rpb
+end
 
 ------------------------------------------------------------------------
--- rxc module
-
-local rxc = {
-	request_req = request_req,
-	request = request,
-}
+-- return module
 
 return rxc

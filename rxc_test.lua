@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 --[[ 
 
-=== test rxc
+=== rxc crude test
 
 
 ]]
@@ -54,7 +54,7 @@ rxs = {}
 rxs.addr = "127.0.0.1"
 rxs.port = 4096
 rxs.rawaddr = hesock.make_ipv4_sockaddr(rxs.addr, rxs.port)
-print(111, repr(rxs.rawaddr))
+--~ print(111, repr(rxs.rawaddr))
 -- server master key
 rxs.smk = ('k'):rep(32)
 
@@ -74,12 +74,26 @@ local r, msg, exitcode
 
 function test_0()  -- ping
 	rcode, rpb = rxc.request(rxs, "", "")
-	assert(rcode==os.time())
+	assert(rcode, "??? maybe server not started ???")
+	assert(math.abs(rcode - os.time()) < 30 )
 	assert(rpb=="")
 	print("test_0:  ok")
 end
 
-function test_1()  -- basic lua
+--~ cmd = "local p2=({...})[1].p2; " .. "return p3, p2"
+--~ cmd = "return req"
+--~ rcode, rpb = rxc.request(rxs, cmd, "hello")
+--~ print(111, repr(rcode), repr(rpb))
+
+--~ rxs.smk=('a'):rep(32)
+--~ cmd = "return nil, 'some error'"
+--~ cmd = "return 123"
+--~ cmd = "return he.stohex(req.nonce) if"
+--~ r, msg = rxc.run_basic_lua(rxs, cmd, "hello")
+--~ print(222, repr(r), repr(msg))
+--~ os.exit()
+
+function test_1()  -- lua with basic request()
 	cmd = " x = 123 "  -- return nil
 	rcode, rpb = rxc.request(rxs, cmd, "")
 	assert(rcode==0)
@@ -106,46 +120,49 @@ function test_1()  -- basic lua
 	print("test_1:  ok")
 end
 
-function test_2()  -- basic shell
-	lua = "return rxd.shell([==[%s]==])"
+function test_2()  -- run_basic_shell
 	sh = "ls /"
-	cmd = strf(lua, sh)
-	rcode, rpb = rxc.request(rxs, cmd, "")
+	rcode, rpb = rxc.run_basic_shell(rxs, sh)
 	assert(rcode==0)
 	assert(rpb:match("\nvar"))
 	sh = "ls --zozo  2>&1 " -- invalid option, exitcode=2
-	cmd = strf(lua, sh)
-	rcode, rpb = rxc.request(rxs, cmd, "")
+	rcode, rpb = rxc.run_basic_shell(rxs, sh)
 	assert(rcode==2)
 	assert(rpb:match("unrecognized option"))
 	print("test_2:  ok")
 end
 
-function test_3()  -- req in lua env 
+function test_3()  -- run_basic_lua 
 	-- req is the first chunk argument: ({...})[1]
-	cmd = "return (({...})[1])"
-	rcode, rpb = rxc.request(rxs, cmd, "")
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode==0)
---~ 	assert(rpb:match"table: 0x")
+	-- run_basic_lua() prefixes the chunk with req definition:
+	r, msg = rxc.run_basic_lua(rxs, "return req.p2", "hello")
+	assert(r=="hello")
+	assert(msg==nil)
+	r, msg = rxc.run_basic_lua(rxs, "end if do") -- syntax error
+	assert(r==nil)
+	assert(msg:match("invalid chunk"))
+	-- return error with string msg
+	r, msg = rxc.run_basic_lua(rxs, "return nil, 'error'")
+	assert(r==nil)
+	assert(msg=="error")
+	-- return error with numeric exit code
+	r, msg = rxc.run_basic_lua(rxs, "return nil, 123")
+	assert(r==nil)
+	assert(msg=="123")
 	print("test_3:  ok")
 end
 
-
 function test_4()  -- kill server
-	cmd = "({...})[1].rxs.exitcode = 1"
-	rcode, rpb = rxc.request(rxs, cmd, "")
-	assert(rcode==0)
-	assert(rpb=="")
+	r, msg = rxc.run_basic_lua(rxs, "req.rxs.exitcode = 1")
+	assert(r=="")
+	assert(msg==nil)
 	print("test_4:  ok")
 end
 
 function test_5()  -- restart server
-	cmd = "({...})[1].rxs.exitcode = 0"
-	rcode, rpb = rxc.request(rxs, cmd, "")
-	print(111, rcode, repr(rpb))
-	assert(rcode==0)
-	assert(rpb=="")
+	r, msg = rxc.run_basic_lua(rxs, "rxd.exitcode = 0")
+	assert(r=="")
+	assert(msg==nil)
 	print("test_5:  ok")
 end
 
