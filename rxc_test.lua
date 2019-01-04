@@ -94,7 +94,9 @@ end
 --~ r, msg = rxc.file_download(rxs, "./zzhello")
 
 --~ cmd=[[export ZZAA="Zaaaaa" ; exec sh -c 'echo "env: $ZZAA" ' ]]
---~ r, msg = rxc.run_basic_shell(rxs, cmd)
+--~ cmd = "wc -l"
+--~ sin = "abc\ndef\n"
+--~ r, msg = rxc.shell_with_stdin(rxs, cmd, sin)
 --~ print(222, repr(r), repr(msg))
 --~ os.exit()
 
@@ -176,7 +178,7 @@ end
 
 function test_6()  -- upload / download
 	r, msg = rxc.file_upload(rxs, "./zzhello", "Hello, upload!")
-	print(222, repr(r), repr(msg))
+--~ 	print(222, repr(r), repr(msg))
 	assert(r=="true")
 	assert(msg==nil)
 	r, msg = rxc.file_download(rxs, "./zzhello")
@@ -200,6 +202,14 @@ function test_6()  -- upload / download
 	print("test_6:  ok")
 end
 
+function test_7() -- shell with stdin
+	cmd = "wc -l"
+	sin = "abc\ndef\n"
+	rcode, rpb = rxc.shell_with_stdin(rxs, cmd, sin)
+	assert(rcode==0)
+	assert(rpb:match("^2\n"))
+	print("test_7:  ok")
+end
 
 
 test_0() -- ping
@@ -208,9 +218,10 @@ test_2() -- basic shell
 test_3() -- lua env
 test_5() -- restart server
 
-hesock.msleep(2000)
+hesock.msleep(2000) -- wait for server to restart
 
 test_6() -- upload / download
+test_7() -- shell with stdin
 test_4() -- kill server
 
 

@@ -269,6 +269,7 @@ local function serve_client(rxs, client)
 		download = rxd.download,
 		upload = rxd.upload,
 		sh = rxd.sh,
+		shin = rxd.shin,
 	}
 	r = check_not_banned(req)
 	    and read_request(req)
@@ -348,7 +349,26 @@ end
 -- server utilities in rxd namespace, for lua commands
 	
 function rxd.sh(req, s)
+	-- basic shell, no stdin
 	local r, exitcode = he.shell(s)
+	return r, exitcode
+end
+
+function rxd.shin(req, s)
+	-- basic shell, stdin is in req.p2
+	-- (default Lua popen cannot handle stdin and stdout
+	--  => copy input to a tmp file, then add input redirection
+	--  to the command)
+	local tmpdir = rxd.tmpdir or '.'
+	local infn = strf("%s/%s.in", tmpdir, he.stohex(req.nonce))
+	local rin, msg = he.fput(infn, req.p2)
+	if not rin then
+		return nil, "cannot store stdin"
+	end
+	local cmd = s .. ' < ' .. infn
+	local r, exitcode = he.shell(cmd)
+	-- remove input file
+	os.remove(infn)
 	return r, exitcode
 end
 

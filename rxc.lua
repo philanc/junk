@@ -158,6 +158,18 @@ function rxc.run_basic_shell(rxs, sh)
 	return rcode, rpb
 end
 
+function rxc.shell_with_stdin(rxs, sh, sin)
+	-- run a simple shell command stdin=sin
+	-- stdout is returned  
+	-- (use 2>&1 to also get stderr)
+	--
+	local luacmd = "return req:shin[=[" .. sh .. "]=]"
+	local rcode, rpb = rxc.request(rxs, luacmd, sin)
+	return rcode, rpb
+end
+
+
+
 function rxc.file_upload(rxs, fname, content)
 	local lua = strf("return req:upload[=[%s]=]", fname)
 	return rxc.run_basic_lua(rxs, lua, content)
