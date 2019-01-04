@@ -131,16 +131,6 @@ end --request()
 ------------------------------------------------------------------------
 -- remote execution commands
 
-function rxc.run_basic_shell(rxs, sh)
-	-- run a simple shell command with no stdin
-	-- stdout is returned  
-	-- (use 2>&1 to also get stderr)
-	--
-	local luacmd = "return rxd.shell[=[" .. sh .. "]=]"
-	local rcode, rpb = rxc.request(rxs, luacmd, "")
-	return rcode, rpb
-end
-
 function rxc.run_basic_lua(rxs, luacmd, p2)
 	-- run a lua chunk
 	-- (the server defines a local 'req' in the chunk)
@@ -158,13 +148,23 @@ function rxc.run_basic_lua(rxs, luacmd, p2)
 	return rpb
 end
 
+function rxc.run_basic_shell(rxs, sh)
+	-- run a simple shell command with no stdin
+	-- stdout is returned  
+	-- (use 2>&1 to also get stderr)
+	--
+	local luacmd = "return req:sh[=[" .. sh .. "]=]"
+	local rcode, rpb = rxc.request(rxs, luacmd, "")
+	return rcode, rpb
+end
+
 function rxc.file_upload(rxs, fname, content)
-	local lua = strf("he.fput([=[%s]=], req.p2)", fname)
+	local lua = strf("return req:upload[=[%s]=]", fname)
 	return rxc.run_basic_lua(rxs, lua, content)
 end
 
 function rxc.file_download(rxs, fname)
-	local lua = strf("return he.fget([=[%s]=])", fname)
+	local lua = strf("return req:download[=[%s]=]", fname)
 	return rxc.run_basic_lua(rxs, lua)
 end
 

@@ -265,6 +265,10 @@ local function serve_client(rxs, client)
 		client = client,
 		client_ip = client_ip, 
 		client_port = client_port,
+		-- utilities in req namespace
+		download = rxd.download,
+		upload = rxd.upload,
+		sh = rxd.sh,
 	}
 	r = check_not_banned(req)
 	    and read_request(req)
@@ -317,25 +321,6 @@ local function serve(rxs)
 	return rxs.exitcode
 end--server()
 
-------------------------------------------------------------------------
--- default parameters
-
-function rxd.set_defaults(rxs)
-	-- set some defaults values for a server
-	--	
-
-	-- 
-end --set_defaults()
-
-
-------------------------------------------------------------------------
--- server utilities 
-
-local function shell(s)
-	local r, exitcode = he.shell(s)
-	return r, exitcode
-end
-
 local function load_config()
 	local name, chunk, r, msg
  	-- name = arg[1] or rxd.config_filename
@@ -356,15 +341,31 @@ local function load_config()
 	end
 	return true
 end
+
+
+
+------------------------------------------------------------------------
+-- server utilities in rxd namespace, for lua commands
 	
+function rxd.sh(req, s)
+	local r, exitcode = he.shell(s)
+	return r, exitcode
+end
+
+function rxd.upload(req, fname)
+	return he.fput(fname, req.p2)
+end
+
+function rxd.download(req, fname)
+	return he.fget(fname)
+end
+
 
 ------------------------------------------------------------------------
 -- run server
 
 -- default functions
 rxd.log = log
-rxd.shell = shell -- "execute a shell command" 
-
 
 -- set default server parameters
 rxd.max_time_drift = 300 -- max secs between client and server time

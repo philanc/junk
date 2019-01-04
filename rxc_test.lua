@@ -176,7 +176,8 @@ end
 
 function test_6()  -- upload / download
 	r, msg = rxc.file_upload(rxs, "./zzhello", "Hello, upload!")
-	assert(r=="")
+	print(222, repr(r), repr(msg))
+	assert(r=="true")
 	assert(msg==nil)
 	r, msg = rxc.file_download(rxs, "./zzhello")
 --~ 	print(222, repr(r), repr(msg))
