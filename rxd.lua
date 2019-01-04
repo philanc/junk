@@ -350,6 +350,7 @@ end
 	
 function rxd.sh(req, s)
 	-- basic shell, no stdin
+--~ 	s = "NX="..he.stohex(req.nonce).."\n"..s
 	local r, exitcode = he.shell(s)
 	return r, exitcode
 end
@@ -359,6 +360,9 @@ function rxd.shin(req, s)
 	-- (default Lua popen cannot handle stdin and stdout
 	--  => copy input to a tmp file, then add input redirection
 	--  to the command)
+	if #req.p2 == 0 then
+		return rxd.sh(req, s)
+	end
 	local tmpdir = rxd.tmpdir or '.'
 	local infn = strf("%s/%s.in", tmpdir, he.stohex(req.nonce))
 	local rin, msg = he.fput(infn, req.p2)

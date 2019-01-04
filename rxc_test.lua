@@ -80,25 +80,25 @@ function test_0()  -- ping
 	print("test_0:  ok")
 end
 
---~ cmd = "local p2=({...})[1].p2; " .. "return p3, p2"
---~ cmd = "return req"
---~ rcode, rpb = rxc.request(rxs, cmd, "hello")
---~ print(111, repr(rcode), repr(rpb))
 
---~ rxs.smk=('a'):rep(32)
---~ cmd = "return nil, 'some error'"
---~ cmd = "return 123"
---~ cmd = "return he.stohex(req.nonce) if"
---~ r, msg = rxc.file_upload(rxs, "./zzhello", "Hello, upload!")
---~ print(222, repr(r), repr(msg))
---~ r, msg = rxc.file_download(rxs, "./zzhello")
+--~ cmd = "sh -s  2>&1 "
 
---~ cmd=[[export ZZAA="Zaaaaa" ; exec sh -c 'echo "env: $ZZAA" ' ]]
---~ cmd = "wc -l"
---~ sin = "abc\ndef\n"
+--~ sin = [[ 
+--~ set -v
+--~ a=AAaaa
+--~ echo hello
+--~ echo $a
+--~ echo -n $a | wc -c
+--~ ]]
+
+--~ cmd = [[ash -c "ls / 
+--~  echo -n ZZZ$NX " ]]
+
+--~ r, msg = rxc.run_basic_shell(rxs, cmd)
 --~ r, msg = rxc.shell_with_stdin(rxs, cmd, sin)
 --~ print(222, repr(r), repr(msg))
 --~ os.exit()
+
 
 function test_1()  -- lua with basic request()
 	cmd = " x = 123 "  -- return nil
