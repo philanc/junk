@@ -13,7 +13,7 @@ echo "$(date) rxd.sh ($$) started" >> $logfile
 trap 'exit 2' INT
 
 while /bin/true ;  do
-	lua -e "require'rxd'.test()" >> $logfile 2>&1
+	lua rxd.lua >> $logfile 2>&1
 	status="$?" 
 	if [ $status != "0" ] ; then 
 		break

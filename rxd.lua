@@ -328,7 +328,7 @@ local function load_config()
 	-- doesn't work with lua -e "require'rxd'.test()" 
 	-- arg[1] is "-e" :-(
 
-	name = rxd.config_filename
+	name = os.getenv"RXCONF" or rxd.config_filename
 	if not name then 
 		return nil, "no config file"
 	end
@@ -338,7 +338,7 @@ local function load_config()
 	end
 	r, msg = pcall(chunk)
 	if not r then
-		return nil, "config file execution error"
+		return nil, "config file execution error: " .. msg
 	end
 	return true
 end
@@ -406,6 +406,7 @@ rxd.log_rejected = true
 rxd.log_aborted = true
 rxd.debug_mode = true
 rxd.log_already_banned = true
+rxd.tmpdir = os.getenv"/tmp" or "/tmp"
 
 -- load config
 rxd.config_filename="./rxd.conf.lua"
