@@ -269,7 +269,7 @@ local function serve_client(rxs, client)
 		download = rxd.download,
 		upload = rxd.upload,
 		sh = rxd.sh,
-		shin = rxd.shin,
+		sh0 = rxd.sh0,
 	}
 	r = check_not_banned(req)
 	    and read_request(req)
@@ -347,32 +347,40 @@ end
 
 ------------------------------------------------------------------------
 -- server utilities in rxd namespace, for lua commands
-	
-function rxd.sh(req, s)
-	-- basic shell, no stdin
---~ 	s = "NX="..he.stohex(req.nonce).."\n"..s
+
+function rxd.sh0(req, s)
+	-- rawv shell, no stdin, no NX definition
+	--
 	local r, exitcode = he.shell(s)
 	return r, exitcode
 end
 
-function rxd.shin(req, s)
-	-- basic shell, stdin is in req.p2
+	
+function rxd.sh(req, s)
+	-- basic shell, if #req.p2 > 0, stdin is in req.p2
 	-- (default Lua popen cannot handle stdin and stdout
 	--  => copy input to a tmp file, then add input redirection
 	--  to the command)
+	-- an environment variable NX is defined with value req.nonce 
+	-- as an hex string.
+	--
+	local cmd, r, exitcode, tmpdir, ifn, msg, nx
+	nx = he.stohex(req.nonce)
+	cmd = "NX=" .. nx .. "\n" .. s
 	if #req.p2 == 0 then
-		return rxd.sh(req, s)
+		r, exitcode = he.shell(cmd)
+		return r, exitcode
 	end
 	local tmpdir = rxd.tmpdir or '.'
-	local infn = strf("%s/%s.in", tmpdir, he.stohex(req.nonce))
-	local rin, msg = he.fput(infn, req.p2)
-	if not rin then
+	local ifn = strf("%s/%s.in", tmpdir, nx)
+	local r, msg = he.fput(ifn, req.p2)
+	if not r then
 		return nil, "cannot store stdin"
 	end
-	local cmd = s .. ' < ' .. infn
-	local r, exitcode = he.shell(cmd)
+	cmd = strf('%s < %s', cmd, ifn)
+	r, exitcode = he.shell(cmd)
 	-- remove input file
-	os.remove(infn)
+	os.remove(ifn)
 	return r, exitcode
 end
 

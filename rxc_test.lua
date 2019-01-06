@@ -91,12 +91,22 @@ end
 --~ echo -n $a | wc -c
 --~ ]]
 
---~ cmd = [[ash -c "ls / 
---~  echo -n ZZZ$NX " ]]
+cmd = [[ash -c "ls / 
+ echo -n ZZZ$NX " ]]
 
---~ r, msg = rxc.run_basic_shell(rxs, cmd)
---~ r, msg = rxc.shell_with_stdin(rxs, cmd, sin)
---~ print(222, repr(r), repr(msg))
+cmd = [[ls / 
+ echo -n ZZZ$NX ]]
+
+
+--~ cmd = [[export NX ; set -v ; ash -c  'echo -n ZZZ$NX'  ]]
+
+cmd = [[echo -n ZZZ$NX  ]]
+
+cmd = [[ cat $NX.in  ]]
+
+--~ rcode, rpb = rxc.shell(rxs, cmd)
+--~ rcode, rpb = rxc.shell(rxs, cmd, "Hello, world!")
+--~ print(222, repr(rcode), repr(rpb))
 --~ os.exit()
 
 
@@ -129,11 +139,11 @@ end
 
 function test_2()  -- run_basic_shell
 	sh = "ls /"
-	rcode, rpb = rxc.run_basic_shell(rxs, sh)
+	rcode, rpb = rxc.shell(rxs, sh)
 	assert(rcode==0)
 	assert(rpb:match("\nvar"))
 	sh = "ls --zozo  2>&1 " -- invalid option, exitcode=2
-	rcode, rpb = rxc.run_basic_shell(rxs, sh)
+	rcode, rpb = rxc.shell(rxs, sh)
 	assert(rcode==2)
 	assert(rpb:match("unrecognized option"))
 	print("test_2:  ok")
@@ -205,7 +215,7 @@ end
 function test_7() -- shell with stdin
 	cmd = "wc -l"
 	sin = "abc\ndef\n"
-	rcode, rpb = rxc.shell_with_stdin(rxs, cmd, sin)
+	rcode, rpb = rxc.shell(rxs, cmd, sin)
 	assert(rcode==0)
 	assert(rpb:match("^2\n"))
 	print("test_7:  ok")

@@ -148,27 +148,28 @@ function rxc.run_basic_lua(rxs, luacmd, p2)
 	return rpb
 end
 
-function rxc.run_basic_shell(rxs, sh)
-	-- run a simple shell command with no stdin
+function rxc.shell0(rxs, sh)
+	-- run a raw shell command, no stdin, no NX
+	-- sin is the optional content of stdin for the command
 	-- stdout is returned  
 	-- (use 2>&1 to also get stderr)
 	--
-	local luacmd = "return req:sh[=[" .. sh .. "]=]"
+	local luacmd = "return req:sh0[=[" .. sh .. "]=]"
 	local rcode, rpb = rxc.request(rxs, luacmd, "")
 	return rcode, rpb
 end
 
-function rxc.shell_with_stdin(rxs, sh, sin)
-	-- run a simple shell command stdin=sin
+function rxc.shell(rxs, sh, sin)
+	-- run a simple shell command
+	-- sin is the optional content of stdin for the command
 	-- stdout is returned  
 	-- (use 2>&1 to also get stderr)
 	--
-	local luacmd = "return req:shin[=[" .. sh .. "]=]"
+	sin = sin or ""
+	local luacmd = "return req:sh[=[" .. sh .. "]=]"
 	local rcode, rpb = rxc.request(rxs, luacmd, sin)
 	return rcode, rpb
 end
-
-
 
 function rxc.file_upload(rxs, fname, content)
 	local lua = strf("return req:upload[=[%s]=]", fname)
