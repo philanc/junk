@@ -20,6 +20,8 @@ he = require 'he'  -- make he global for request chunks
 local hezen = require 'hezen'
 local hesock = require 'hesock'
 
+local traceback = require("debug").traceback
+
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
 
@@ -309,7 +311,7 @@ local function serve(rxs)
 			serve_client(rxs, client) 
 --~ 			rxs.log("client closed.", client)
 		else
-			r, msg = pcall(serve_client, rxs, client)
+			r, msg = xpcall(serve_client, traceback, rxs, client)
 			if not r then
 				rxs.log("serve_client error", msg)
 			end

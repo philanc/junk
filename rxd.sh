@@ -10,18 +10,20 @@ echo "$(date) rxd.sh ($$) started" >> $logfile
 # 'kill 123' leaves the lua process alive
 
 # ^C must interrupt the lua process below and this rxd.sh process
-trap 'exit 2' INT
+### hmmm, no.
+### trap 'exit 2' INT
 
 while /bin/true ;  do
 	lua rxd.lua >> $logfile 2>&1
 	status="$?" 
-	if [ $status != "0" ] ; then 
+	if [ $status != "0" -a $status != "143" ] ; then 
 		break
 	fi
-	echo "rxs has exited. sleep 1, then restart."
+	echo "server has exited. sleep 1, then restart."
 	sleep 1
 done
 
+echo "$(date -Iseconds) rxd.lua exited with code $status" >> $logfile
 exit $status
 
 

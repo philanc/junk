@@ -221,6 +221,10 @@ function test_7() -- shell with stdin
 	print("test_7:  ok")
 end
 
+for i = 1, 10 do test_1() end
+os.exit()
+
+
 
 test_0() -- ping
 test_1() -- basic lua
