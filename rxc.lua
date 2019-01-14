@@ -133,7 +133,7 @@ end --request()
 ------------------------------------------------------------------------
 -- remote execution commands
 
-function rxc.run_basic_lua(rxs, luacmd, p2)
+function rxc.lua(rxs, luacmd, p2)
 	-- run a lua chunk
 	-- (the server defines a local 'req' in the chunk)
 	-- the chunk should return one value or nil, err
@@ -141,7 +141,7 @@ function rxc.run_basic_lua(rxs, luacmd, p2)
 	-- p2 is an optional string (defaults to "").
 	-- p2 can be accessed in the chunk as req.p2
 	--
-	local rcode, rpb = rxc.request(rxs, luacmd, p2)
+	local rcode, rpb = rxc.request(rxs, "lua: " .. luacmd, p2)
 	if not rcode or rcode > 0 then 
 		-- rcode==nil: connection/protocol error
 		-- rcode==1: the lua chunk returned nil, err (rpb=err)
@@ -156,9 +156,10 @@ function rxc.shell0(rxs, sh)
 	-- stdout is returned  
 	-- (use 2>&1 to also get stderr)
 	--
-	local luacmd = "return req:sh0[=[" .. sh .. "]=]"
-	local rcode, rpb = rxc.request(rxs, luacmd, "")
-	return rcode, rpb
+	local cmd = "sh0: " .. sh
+	local rcode, rpb = rxc.request(rxs, cmd, "")
+	if not rcode then return nil, rpb end
+	return rpb, rcode  -- result, exitcode (as he.shell)
 end
 
 function rxc.shell(rxs, sh, sin)
@@ -168,19 +169,28 @@ function rxc.shell(rxs, sh, sin)
 	-- (use 2>&1 to also get stderr)
 	--
 	sin = sin or ""
-	local luacmd = "return req:sh[=[" .. sh .. "]=]"
-	local rcode, rpb = rxc.request(rxs, luacmd, sin)
-	return rcode, rpb
+	local cmd = "sh: " .. sh
+	local rcode, rpb = rxc.request(rxs, cmd, sin)
+	if not rcode then return nil, rpb end --connection error
+	return rpb, rcode  -- result, exitcode (as he.shell)
 end
 
 function rxc.file_upload(rxs, fname, content)
-	local lua = strf("return req:upload[=[%s]=]", fname)
-	return rxc.run_basic_lua(rxs, lua, content)
+	local cmd = "uld: " .. fname
+	local rcode, rpb = rxc.request(rxs, cmd, content)
+	if not rcode or rcode > 0 then
+		return nil, rpb --connection or function error
+	end
+	return true
 end
 
 function rxc.file_download(rxs, fname)
-	local lua = strf("return req:download[=[%s]=]", fname)
-	return rxc.run_basic_lua(rxs, lua)
+	local cmd = "dld: " .. fname
+	local rcode, rpb = rxc.request(rxs, cmd)
+	if not rcode or rcode > 0 then
+		return nil, rpb --connection or function error
+	end
+	return rpb
 end
 
 ------------------------------------------------------------------------

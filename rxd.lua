@@ -186,51 +186,44 @@ local function read_request(req)
 	return req
 end --read_req()
 
+rxd.handlers = {} -- handler table
 
 local function handle_cmd(req)
 	--
 --~ 	he.pp(req)
+	-- log request (first loglen bytes only)
+	local loglen = 50
 	local c = req.p1
-	c = (#c < 28) and c or (c:sub(1,28) .. "...")
+	c = (#c < loglen) and c or (c:sub(1,loglen) .. "...")
 	c = c:gsub("%s+", " ")
-	req.rxs.log(strf("ip=%s port=%s cmd=%s", 
+	req.rxs.log(strf("%s:%s %s", 
 		req.client_ip, tostring(req.client_port), repr(c) ))
-		
+	
 	-- if p1 is empty, return server time in rcode (server "ping")
 	if #req.p1 == 0 then
 		req.rcode = os.time()
 		req.rpb = ""
 		return true
 	end
-	-- p1 is the lua cmd
-	local chunk, r, err
-	-- define req as local in chunk
-	-- (req is the first arg passed to chunk, chunk args is '...')
-	local cmd = "local req = ({...})[1]; " .. req.p1
-	chunk, err = load(cmd, "cmd", "bt")
-	if not chunk then
-		req.rcode = 999
-		req.rpb = "invalid chunk: " .. err
+	--
+	-- find the handler
+	local h, cmd = req.p1:match("^(%S-): (.*)$")
+	if not h then 
+		req.rcode = 2
+		req.rpb = "no handler name"
 		return true
 	end
-	r, err = chunk(req) -- must pass req to chunk
-	if not r then
-		if err then
-			req.rcode = 1
-			req.rpb = tostring(err)
-		else
-			req.rcode = 0
-			req.rpb = ""
-		end
-	elseif math.type(err) == "integer" then
-		req.rcode = err
-		req.rpb = tostring(r)
-	else
-		req.rcode = 0
-		req.rpb = tostring(r)
+	local handler = rxd.handlers[h]
+	if not handler then 
+		req.rcode = 3
+		req.rpb = "unknown handler"
+		return true
 	end
+	-- call the handler
+	-- (handler signature: handler(req, cmd) => rcode, rpb)
+	req.rcode, req.rpb = handler(req, cmd)
 	return true
-end
+end --handle_cmd
 
 local function send_response(req)
 	local ercb, erpb, r, errmsg
@@ -295,6 +288,7 @@ local function serve(rxs)
 	init_used_nonce_list(rxs)
 	rxs.bind_rawaddr = rxs.bind_rawaddr or 
 		hesock.make_ipv4_sockaddr(rxs.bind_addr, rxs.port)
+	print(111, rxs.bind_addr, rxs.port, repr(rxs.bind_rawaddr))
 	local server = assert(hesock.bind(rxs.bind_rawaddr))
 	rxs.log(strf("server bound to %s port %d", 
 		rxs.bind_addr, rxs.port))
@@ -348,17 +342,59 @@ end
 
 
 ------------------------------------------------------------------------
--- server utilities in rxd namespace, for lua commands
+-- handlers
 
-function rxd.sh0(req, s)
-	-- rawv shell, no stdin, no NX definition
-	--
-	local r, exitcode = he.shell(s)
-	return r, exitcode
+function rxd.handlers.lua(req, cmd)
+	-- execute lua 'cmd'; return rcode, rpb
+	local chunk, r, err, rcode, rpb
+	-- define req as local in chunk
+	-- (req is the first arg passed to chunk, chunk args is '...')
+	cmd = "local req = ({...})[1]; " .. cmd
+	chunk, err = load(cmd, "cmd", "bt")
+	if not chunk then
+		return 2, "invalid chunk: " .. err
+	end
+	r, err = chunk(req) -- must pass req to chunk
+	-- chunk is assumed to return rpb, or nil, errmsg
+	if not r and not err then 
+		return 0, ""
+	elseif not r then
+		return 1, tostring(err)
+	else
+		return 0, tostring(r)
+	end
+end --rxd.handlers.lua
+
+function rxd.handlers.uld(req, cmd)
+	-- upload file to server
+	-- file content is req.p2, filename is cmd
+	local r, msg = he.fput(cmd, req.p2)
+	if not r then
+		return 1, msg
+	else
+		return 0, ""
+	end
 end
 
-	
-function rxd.sh(req, s)
+function rxd.handlers.dld(req, cmd)
+	-- download file to client
+	-- filename is cmd
+	local r, msg = he.fget(cmd)
+	if not r then
+		return 1, msg
+	else
+		return 0, r
+	end
+end
+
+function rxd.handlers.sh0(req, cmd)
+	-- raw shell, no stdin, no NX definition
+	--
+	local r, exitcode = he.shell(s)
+	return exitcode, r
+end
+
+function rxd.handlers.sh(req, cmd)
 	-- basic shell, if #req.p2 > 0, stdin is in req.p2
 	-- (default Lua popen cannot handle stdin and stdout
 	--  => copy input to a tmp file, then add input redirection
@@ -366,12 +402,12 @@ function rxd.sh(req, s)
 	-- an environment variable NX is defined with value req.nonce 
 	-- as an hex string.
 	--
-	local cmd, r, exitcode, tmpdir, ifn, msg, nx
+	local r, exitcode, tmpdir, ifn, msg, nx
 	nx = he.stohex(req.nonce)
-	cmd = "NX=" .. nx .. "\n" .. s
+	cmd = "NX=" .. nx .. "\n" .. cmd
 	if #req.p2 == 0 then
 		r, exitcode = he.shell(cmd)
-		return r, exitcode
+		return exitcode, r
 	end
 	local tmpdir = rxd.tmpdir or '.'
 	local ifn = strf("%s/%s.in", tmpdir, nx)
@@ -383,16 +419,9 @@ function rxd.sh(req, s)
 	r, exitcode = he.shell(cmd)
 	-- remove input file
 	os.remove(ifn)
-	return r, exitcode
-end
+	return exitcode, r
+end --rxd.handlers.sh
 
-function rxd.upload(req, fname)
-	return he.fput(fname, req.p2)
-end
-
-function rxd.download(req, fname)
-	return he.fget(fname)
-end
 
 
 ------------------------------------------------------------------------

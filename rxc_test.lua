@@ -91,23 +91,23 @@ function test_0()  -- ping
 end
 
 function test_1()  -- lua with basic request()
-	cmd = " x = 123 "  -- return nil
+	cmd = "lua: x = 123 "  -- return nil
 	rcode, rpb = rxc.request(rxd, cmd, "")
 	assert(rcode==0)
 	assert(rpb=="")
-	cmd = "return'hello' "  -- return string
+	cmd = "lua: return'hello' "  -- return string
 	rcode, rpb = rxc.request(rxd, cmd, "")
 	assert(rcode==0)
 	assert(rpb=="hello")
-	cmd = " 3 + if "  -- syntax error
+	cmd = "lua: 3 + if "  -- syntax error
 	rcode, rpb = rxc.request(rxd, cmd, "")
-	assert(rcode==999)
-	cmd = " return nil, 'some error' "  -- exec error
+--~ 	print(111, rcode, repr(rpb))
+	assert(rcode==2)
+	cmd = "lua: return nil, 'some error' "  -- exec error
 	rcode, rpb = rxc.request(rxd, cmd, "")
 	assert(rcode==1)
 	assert(rpb=="some error")
---~ 	print(rpb)
-	cmd = [[ -- access req object
+	cmd = [[lua: -- access req object
 	a = { ... }; req = a[1]
 	return req.rxs.smk
 	]]
@@ -119,46 +119,46 @@ end
 
 function test_2()  -- run_basic_shell
 	sh = "ls /"
-	rcode, rpb = rxc.shell(rxd, sh)
-	assert(rcode==0)
-	assert(rpb:match("\nvar"))
+	r, exitcode = rxc.shell(rxd, sh)
+	assert(exitcode==0)
+	assert(r:match("\nvar"))
 	sh = "ls --zozo  2>&1 " -- invalid option, exitcode=2
-	rcode, rpb = rxc.shell(rxd, sh)
-	assert(rcode==2)
-	assert(rpb:match("unrecognized option"))
+	r, exitcode = rxc.shell(rxd, sh)
+	assert(exitcode==2)
+	assert(r:match("unrecognized option"))
 	print("test_2:  ok")
 	-- test NX defined
 	sh = "echo $NX"
-	rcode, rpb = rxc.shell(rxd, sh)
+	r, exitcode = rxc.shell(rxd, sh)
 --~ 	print(111, repr(rcode), repr(rpb), #rpb)
-	assert(rcode==0)
-	assert(rpb:match("^%x+\n"))	
-	assert(#he.strip(rpb) == 32)	
+	assert(exitcode==0)
+	assert(r:match("^%x+\n"))	
+	assert(#he.strip(r) == 32)	
 end
 
-function test_3()  -- run_basic_lua 
+function test_3()  -- lua 
 	-- req is the first chunk argument: ({...})[1]
-	-- run_basic_lua() prefixes the chunk with req definition:
-	r, msg = rxc.run_basic_lua(rxd, "return req.p2", "hello")
+	-- lua() prefixes the chunk with req definition:
+	r, msg = rxc.lua(rxd, "return req.p2", "hello")
 	assert(r=="hello")
 	assert(msg==nil)
 	-- syntax error
-	r, msg = rxc.run_basic_lua(rxd, "end if do")
+	r, msg = rxc.lua(rxd, "end if do")
 	assert(r==nil)
 	assert(msg:match("invalid chunk"))
 	-- return error with string msg
-	r, msg = rxc.run_basic_lua(rxd, "return nil, 'error'")
+	r, msg = rxc.lua(rxd, "return nil, 'error'")
 	assert(r==nil)
 	assert(msg=="error")
 	-- return error with numeric exit code
-	r, msg = rxc.run_basic_lua(rxd, "return nil, 123")
+	r, msg = rxc.lua(rxd, "return nil, 123")
 	assert(r==nil)
 	assert(msg=="123")
 	print("test_3:  ok")
 end
 
 function test_4()  -- kill server
-	r, msg = rxc.run_basic_lua(rxd, 
+	r, msg = rxc.lua(rxd, 
 		"rxd.exitcode = 1", "", "stop server")
 	assert(r=="")
 	assert(msg==nil)
@@ -166,7 +166,7 @@ function test_4()  -- kill server
 end
 
 function test_5()  -- restart server
-	r, msg = rxc.run_basic_lua(rxd, 
+	r, msg = rxc.lua(rxd, 
 		"rxd.exitcode = 0", "", "restart server")
 	assert(r=="")
 	assert(msg==nil)
@@ -175,8 +175,7 @@ end
 
 function test_6()  -- upload / download
 	r, msg = rxc.file_upload(rxd, "./zzhello", "Hello, upload!")
---~ 	print(222, repr(r), repr(msg))
-	assert(r=="true")
+	assert(r==true)
 	assert(msg==nil)
 	r, msg = rxc.file_download(rxd, "./zzhello")
 --~ 	print(222, repr(r), repr(msg))
@@ -184,27 +183,26 @@ function test_6()  -- upload / download
 	assert(msg==nil)
 	-- remove the file
 	cmd = [[os.remove"./zzhello"]]
-	r, msg = rxc.run_basic_lua(rxd, cmd, "", "remove")
+	r, msg = rxc.lua(rxd, cmd, "")
 	assert(r=="")
 	assert(msg==nil)
 	cmd = [[ --test removed
-		req = ({...})[1]
 		s, msg = he.fget("./zzhello")
 		return s, msg
 	]]
-	rcode, rpb = rxc.request(rxd, cmd, "")
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode==1)
-	assert(rpb:match"No such file")
+	r, msg = rxc.lua(rxd, cmd)
+--~ 	print(111, repr(r), repr(msg))
+	assert(not r)
+	assert(msg:match"No such file")
 	print("test_6:  ok")
 end
 
 function test_7() -- shell with stdin
 	cmd = "wc -l"
 	sin = "abc\ndef\n"
-	rcode, rpb = rxc.shell(rxd, cmd, sin)
-	assert(rcode==0)
-	assert(rpb:match("^2\n"))
+	r, exitcode = rxc.shell(rxd, cmd, sin)
+	assert(exitcode==0)
+	assert(r:match("^2\n"))
 	print("test_7:  ok")
 end
 
@@ -236,13 +234,14 @@ test_0() -- ping
 test_1() -- basic lua
 test_2() -- basic shell
 test_3() -- lua env
-test_5() -- restart server
 
+test_5() -- restart server
 hesock.msleep(2000) -- wait for server to restart
 
 test_6() -- upload / download
 test_7() -- shell with stdin
---~ test_4() -- kill server
+test_4() -- kill server
 
+os.exit(11)
 
 
