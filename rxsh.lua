@@ -53,7 +53,7 @@ function disp(fpath)
 end
 
 function lua(cmd)
-	local r, msg = rxc.run_basic_lua(rxd, cmd)
+	local r, msg = rxc.lua(rxd, cmd)
 	if not r then 
 		print("Lua error:", msg)
 	end

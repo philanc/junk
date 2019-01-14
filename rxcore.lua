@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 --[[ 
 
-=== rx 
+=== rxcore
 
 
 ]]
@@ -195,9 +195,9 @@ end
 
 
 ------------------------------------------------------------------------
--- rx module
+-- rxcore module
 
-local rx = {
+local rxcore = {
 	pack_cb = pack_cb,
 	unpack_cb = unpack_cb,
 	get_reqtime_nonce = get_reqtime_nonce,
@@ -215,4 +215,4 @@ local rx = {
 	VERSION = VERSION,
 }
 
-return rx
+return rxcore

@@ -32,7 +32,7 @@ end
 ------------------------------------------------------------------------
 -- common rx utilities
 
-local rx = require "rx"
+local rxcore = require "rxcore"
 
 	
 
@@ -45,7 +45,7 @@ local function send_request(req)
 	if not req.server then 
 		return nil, errmsg
 	end
-	r = rx.wrap_req(req)
+	r = rxcore.wrap_req(req)
 	r, errmsg = req.server:write(req.ecb)
 	if not r then 
 		return nil, "cannot send ecb " .. repr(errmsg)
@@ -67,26 +67,26 @@ end --send_request
 
 local function read_response(req)
 	local cb, ercb, rcb, erpb, rpb, r, errmsg
-	ercb, errmsg = req.server:read(rx.ERCBLEN)
+	ercb, errmsg = req.server:read(rxcore.ERCBLEN)
 	if not ercb then
 		return nil, "read ercb error " .. repr(errmsg)
 	end
-	if #ercb < rx.ERCBLEN then
+	if #ercb < rxcore.ERCBLEN then
 		errmsg = "read " .. repr(#ercb) .. " bytes"
 		return nil, "read ercb error " .. repr(errmsg)
 	end
-	r, errmsg = rx.unwrap_resp_cb(req, ercb)
+	r, errmsg = rxcore.unwrap_resp_cb(req, ercb)
 	if not r then
 		return nil, "unwrap_resp_cb error " .. repr(errmsg)
 	end
 	-- now read rpb if any
 	if req.rpblen > 0 then 
-		local erpblen = req.rpblen + rx.MACLEN
+		local erpblen = req.rpblen + rxcore.MACLEN
 		erpb, errmsg = req.server:read(erpblen)
 		if (not erpb) or #erpb < erpblen then
 			return nil, "cannot read erpb " .. repr(errmsg)
 		end
-		r, errmsg = rx.unwrap_resp_pb(req, erpb)
+		r, errmsg = rxcore.unwrap_resp_pb(req, erpb)
 		if not r then
 			return nil, "unwrap_resp_pb error"
 		end

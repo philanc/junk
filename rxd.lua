@@ -44,7 +44,7 @@ end
 ------------------------------------------------------------------------
 -- common rx utilities
 
-local rx = require "rx"
+local rxcore = require "rxcore"
 
 
 
@@ -145,18 +145,18 @@ end
 
 local function read_request(req)
 	local cb, ecb, errmsg, ep1, ep2, r
-	ecb, errmsg = req.client:read(rx.ECBLEN)
-	if (not ecb) or #ecb < rx.ECBLEN then
+	ecb, errmsg = req.client:read(rxcore.ECBLEN)
+	if (not ecb) or #ecb < rxcore.ECBLEN then
 		return reject(req, "cannot read req ecb", errmsg)
 	end
-	rx.get_reqtime_nonce(req, ecb)
+	rxcore.get_reqtime_nonce(req, ecb)
 	if not time_is_valid(req) then 
 		return reject(req, "invalid req time")
 	end
 	if used_nonce(req) then
 		return reject(req, "already used nonce")
 	end
-	r, errmsg = rx.unwrap_req_cb(req, ecb)
+	r, errmsg = rxcore.unwrap_req_cb(req, ecb)
 	if not r then 
 		return reject(req, errmsg)
 	end
@@ -165,21 +165,21 @@ local function read_request(req)
 	--
 	-- now read p1, p2 if any
 	if req.p1len > 0 then 
-		local ep1len = req.p1len + rx.MACLEN
+		local ep1len = req.p1len + rxcore.MACLEN
 		ep1, errmsg = req.client:read(ep1len)
 		if (not ep1) or #ep1 < ep1len then
 			return abort(req, "cannot read req ep1", errmsg)
 		end
 	end
 	if req.p2len > 0 then 
-		local ep2len = req.p2len + rx.MACLEN
+		local ep2len = req.p2len + rxcore.MACLEN
 		ep2, errmsg = req.client:read(ep2len)
 		if (not ep2) or #ep2 < ep2len then
 			return abort(req, "cannot read req ep2", errmsg)
 		end
 	end
 	-- decrypt ep1, ep2 if any	
-	r, errmsg = rx.unwrap_req_pb(req, ep1, ep2)
+	r, errmsg = rxcore.unwrap_req_pb(req, ep1, ep2)
 	if not r then
 		return abort(req, "unwrap_req_pb error")
 	end
@@ -227,7 +227,7 @@ end --handle_cmd
 
 local function send_response(req)
 	local ercb, erpb, r, errmsg
-	r = rx.wrap_resp(req)
+	r = rxcore.wrap_resp(req)
 	r, errmsg = req.client:write(req.ercb)
 	if not r then
 		return abort(req, "send resp cb error", errmsg)
@@ -288,13 +288,12 @@ local function serve(rxs)
 	init_used_nonce_list(rxs)
 	rxs.bind_rawaddr = rxs.bind_rawaddr or 
 		hesock.make_ipv4_sockaddr(rxs.bind_addr, rxs.port)
-	print(111, rxs.bind_addr, rxs.port, repr(rxs.bind_rawaddr))
+--~ 	print(111, rxs.bind_addr, rxs.port, repr(rxs.bind_rawaddr))
 	local server = assert(hesock.bind(rxs.bind_rawaddr))
 	rxs.log(strf("server bound to %s port %d", 
 		rxs.bind_addr, rxs.port))
-	print("getserverinfo(server)", hesock.getserverinfo(server, true))
+--~ 	print("getserverinfo(server)", hesock.getserverinfo(server, true))
 	
---~ 	rxs.exitcode = 1
 	while not rxs.exitcode do
 		client, msg = hesock.accept(server)
 		if not client then
@@ -314,7 +313,7 @@ local function serve(rxs)
 	if client then hesock.close(client); client = nil end
 	-- TODO should be: 	close_all_clients(rxs)
 	local r, msg = hesock.close(server)
-	rxs.log("hehs closed", r, msg)
+	rxs.log("server closed", r, msg)
 	return rxs.exitcode
 end--server()
 
