@@ -26,12 +26,7 @@ end
 
 local rxc = require 'rxc'
 
--- server info
-rxd = { 
-	log = print,
-	config_filename = "rxd.conf.lua",
-}
-assert(rxc.load_rxd_config())
+rxd = assert(rxc.load_rxd_config())
 
 
 -- prepare req
@@ -39,6 +34,11 @@ req = { rxs = rxd }
 
 ------------------------------------------------------------------------
 -- utilities
+
+function rget(fpath)
+	local s, msg = rxc.file_download(rxd, fpath)
+	return s, msg
+end
 
 function download(fpath)
 	local s, msg = rxc.file_download(rxd, fpath)
@@ -62,13 +62,13 @@ end
 
 function shell(cmd, sin)
 	cmd = cmd .. " 2>&1 "
-	local rcode, rpb = rxc.shell(rxd, cmd, sin)
-	if not rcode then
-		printf("ERROR -- server or communication error")
-	elseif rcode > 0 then
-		printf("ERROR %d\n%s---", rcode, rpb)
+	local r, exitcode = rxc.shell(rxd, cmd, sin)
+	if not r then
+		printf("ERROR -- server or communication error: " .. exitcode)
+	elseif math.type(exitcode) == "integer" and exitcode > 0 then
+		printf("EXIT %d\n%s---", exitcode, r)
 	else
-		print(rpb)
+		print(r)
 	end
 end
 

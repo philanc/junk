@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 --[[ 
 
-=== rxcore
+=== rxcore - rxc/rxd common definitions
 
 
 ]]
@@ -193,6 +193,39 @@ local function unwrap_resp_pb(req, erpb)
 	return req
 end
 
+------------------------------------------------------------------------
+-- configuration
+
+local function load_rxd_config(rxd)
+	-- load a config file for the server 'rxd'
+	-- if no rxd is provided, a new object is created.
+ 	-- config filename = 
+	--	$RXDCONF 
+	--	or rxd.config_filename
+	--	or "rxd.conf.lua"
+	-- if no config file is found, or in case of an error, 
+	-- return nil, errmsg
+	-- else return rxd
+	rxd = rxd or {}
+	local name, chunk, env, r, msg
+
+	name = os.getenv"RXDCONF" 
+		or rxd.config_filename
+		or "rxd.conf.lua"
+	-- create an environment for the chunk and place rxd in it
+	env = he.clone(_G)
+	env.rxd = rxd
+	chunk, msg = loadfile(name, "bt", env)
+	if not chunk then
+		return nil, msg
+	end
+	r, msg = pcall(chunk)
+	if not r then
+		return nil, "config file execution error: " .. msg
+	end
+	return rxd
+end --load_rxd_config()
+
 
 ------------------------------------------------------------------------
 -- rxcore module
@@ -207,6 +240,8 @@ local rxcore = {
 	wrap_resp = wrap_resp,
 	unwrap_resp_cb = unwrap_resp_cb,
 	unwrap_resp_pb = unwrap_resp_pb,
+
+	load_rxd_config = load_rxd_config,
 	
 	MACLEN = MACLEN,
 	ECBLEN = ECBLEN,

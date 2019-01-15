@@ -45,24 +45,7 @@ end
 local rxc = require 'rxc'
 
 -- server info
-rxd = {}
-
--- default localhost test config
--- bind raw address  (localhost:4096)
--- rxd.rawaddr = '\2\0\1\0\127\0\0\1\0\0\0\0\0\0\0\0'
--- bind_address = '::1'    -- for ip6 localhost
-
-rxd.addr = "127.0.0.1"
-rxd.port = 4096
-rxd.rawaddr = hesock.make_ipv4_sockaddr(rxd.addr, rxd.port)
-rxd.smk = ('k'):rep(32) -- server master key
-
--- server info
-rxd = { 
-	log = print,
-	config_filename = "rxd.conf.lua",
-}
-assert(rxc.load_rxd_config())
+rxd = assert(rxc.load_rxd_config())
 
 ------------------------------------------------------------------------
 

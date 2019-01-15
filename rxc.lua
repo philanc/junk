@@ -41,6 +41,9 @@ local rxcore = require "rxcore"
 
 local function send_request(req)
 	local r, errmsg
+	local rxd = req.rxs
+	rxd.rawaddr = rxd.rawaddr 
+		or hesock.make_ipv4_sockaddr(rxd.addr, rxd.port)
 	req.server, errmsg = hesock.connect(req.rxs.rawaddr)
 	if not req.server then 
 		return nil, errmsg
@@ -196,39 +199,7 @@ end
 ------------------------------------------------------------------------
 -- load config file (can be used both by server and client
 
-function rxc.load_rxd_config()
-	-- load a config file for the server 'rxd'
-	-- the server to be configured is the global 'rxd' object ('rxd'
-	-- is explicitely used in the config file HMMMM...)
- 	-- config filename = 
-	--	$RXCONF 
-	--	or rxd.config_filename
-	--	or "rxd.conf.lua"
-	-- if no config file is found, or in case of an error, 
-	-- return nil, errmsg
-	
-	local name, chunk, r, msg
-	-- doesn't work with lua -e "require'rxd'.test()" 
-	-- arg[1] is "-e" :-(
-
-	name = os.getenv"RXDCONF" 
-		or rxd.config_filename
-		or "rxd.conf.lua"
---~ 	if not name then 
---~ 		return nil, "no config file"
---~ 	end
-	chunk, msg = loadfile(name)
-	if not chunk then
-		return nil, msg
-	end
-	r, msg = pcall(chunk)
-	if not r then
-		return nil, "config file execution error: " .. msg
-	end
-	rxd.rawaddr = hesock.make_ipv4_sockaddr(rxd.addr, rxd.port)
-	return true
-end
-
+rxc.load_rxd_config = rxcore.load_rxd_config
 
 
 	

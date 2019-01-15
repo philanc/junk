@@ -317,28 +317,6 @@ local function serve(rxs)
 	return rxs.exitcode
 end--server()
 
-local function load_config()
-	local name, chunk, r, msg
- 	-- name = arg[1] or rxd.config_filename
-	-- doesn't work with lua -e "require'rxd'.test()" 
-	-- arg[1] is "-e" :-(
-
-	name = os.getenv"RXCONF" or rxd.config_filename
-	if not name then 
-		return nil, "no config file"
-	end
-	chunk, msg = loadfile(name)
-	if not chunk then
-		return nil, msg
-	end
-	r, msg = pcall(chunk)
-	if not r then
-		return nil, "config file execution error: " .. msg
-	end
-	return true
-end
-
-
 
 ------------------------------------------------------------------------
 -- handlers
@@ -440,7 +418,7 @@ rxd.tmpdir = os.getenv"/tmp" or "/tmp"
 
 -- load config
 rxd.config_filename="./rxd.conf.lua"
-local r, msg = load_config()
+local r, msg = rxcore.load_rxd_config(rxd)
 if not r then
 	rxd.log("rxd load_config error: " .. msg)
 	print("rxd load_config error", msg)
