@@ -26,11 +26,8 @@ end
 
 local rxc = require 'rxc'
 
-rxd = assert(rxc.load_rxd_config())
+rxd = assert(rxc.load_rxd_config({config_filename = "rxd.conf.lua"}))
 
-
--- prepare req
-req = { rxs = rxd }
 
 ------------------------------------------------------------------------
 -- utilities
@@ -76,14 +73,43 @@ end
 -- examples
 
 
-lua[[ return string.format("%s - client time is %d sec lower.",
-	he.strip(he.shell"date"), os.time()-req.reqtime) ]]
+--~ lua[[ return string.format("%s - client time is %d sec lower.",
+--~ 	he.strip(he.shell"date"), os.time()-req.reqtime) ]]
 
-shell[[ ps -opid,pgid,command ]]
+--~ shell[[ touch /dev/shm/zzl1 ]]
+--~ shell[[ ls -la /dev/shm ]]
 
+-- display the log file
+--~ print(rget"/home/l1/rxd/rxd.log")
 
+-- display last lines of the log file
+--~ shell[[ tail /home/l1/rxd/rxd.log ]]
+--~ shell[[ tail rxd.log ]]
 
+-- empty the rxd log file
+--~ lua[[ he.fput("/home/l1/rxd/rxd.log", "") ]]
 
--- done
+--update server
+--~ print(rxc.file_upload(rxd, "./rxd.lua", he.fget("./rxd.lua")))
+--~ print(rxc.lua(rxd, "rxd.exitcode = 0"))
 
+c1 = strf([[ cd /var/log
+grep "DPT=3761" syslog* \
+	| grep -v "%s"  \
+	| sed 's/DST=.*$//' \
+	| sed 's/atlanta.*SRC=/\t/' \
+	| awk '{print($4); }' \
+	| sort -n  \
+	2>&1
+	]], rxd.client_addr)
+--~ shell(c1)
 
+--~ shell[[ ls -l /var/log ]]
+
+--~ shell[[ ps -opid,pgid,command ]]
+
+--~ shell[[ tail rxd.log ]]
+shell[[ date ]]
+
+--~ status, resp = rxc.request(rxd, "", "")
+--~ print(status, repr(resp))

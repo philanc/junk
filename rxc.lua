@@ -19,6 +19,8 @@ local hesock = require 'hesock'
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
 
+local traceback = require("debug").traceback
+
 local function px(s, msg) 
 	print("--", msg or "")
 	print(he.stohex(s, 16, " ")) 
@@ -39,63 +41,42 @@ local rxcore = require "rxcore"
 ------------------------------------------------------------------------
 -- client functions
 
-local function send_request(req)
-	local r, errmsg
-	local rxd = req.rxs
-	rxd.rawaddr = rxd.rawaddr 
-		or hesock.make_ipv4_sockaddr(rxd.addr, rxd.port)
-	req.server, errmsg = hesock.connect(req.rxs.rawaddr)
-	if not req.server then 
-		return nil, errmsg
+local function connect(ctx)
+	ctx.rawaddr = ctx.rawaddr 
+		or hesock.make_ipv4_sockaddr(ctx.addr, ctx.port)
+	ctx.state = "connect"
+	ctx.server = assert(hesock.connect(ctx.rawaddr))
+	return true
+end
+	
+local function send_request(ctx, cmd, data)
+	local ehdr, ecmd, edata = rxcore.encrypt_req(ctx, cmd, data)
+	ctx.state = "send req hdr"
+	assert(ctx.server:write(ehdr))
+	if ecmd then 
+		ctx.state = "send req cmd"
+		assert(ctx.server:write(ecmd))
 	end
-	r = rxcore.wrap_req(req)
-	r, errmsg = req.server:write(req.ecb)
-	if not r then 
-		return nil, "cannot send ecb " .. repr(errmsg)
-	end
-	if req.ep1 then 
-		r, errmsg = req.server:write(req.ep1)
-		if not r then 
-			return nil, "cannot send ep1 " .. repr(errmsg)
-		end
-	end
-	if req.ep2 then 
-		r, errmsg = req.server:write(req.ep2)
-		if not r then 
-			return nil, "cannot send ep2 " .. repr(errmsg)
-		end
+	if edata then 
+		ctx.state = "send req data"
+		assert(ctx.server:write(edata)) 
 	end
 	return true
-end --send_request
+end
 
-local function read_response(req)
-	local cb, ercb, rcb, erpb, rpb, r, errmsg
-	ercb, errmsg = req.server:read(rxcore.ERCBLEN)
-	if not ercb then
-		return nil, "read ercb error " .. repr(errmsg)
+local function read_response(ctx)
+	ctx.state = "read resp hdr"
+	local ehdr = assert(ctx.server:read(rxcore.ER_HDRLEN))
+	assert(#ehdr == rxcore.ER_HDRLEN, "invalid header")
+	local status, resplen = rxcore.decrypt_resphdr(ctx, ehdr)
+	local resp = ""
+	if resplen > 0 then
+		ctx.state = "read resp"
+		resp = assert(rxcore.decrypt_resp(ctx, 
+			assert(ctx.server:read(resplen + rxcore.MACLEN))))
 	end
-	if #ercb < rxcore.ERCBLEN then
-		errmsg = "read " .. repr(#ercb) .. " bytes"
-		return nil, "read ercb error " .. repr(errmsg)
-	end
-	r, errmsg = rxcore.unwrap_resp_cb(req, ercb)
-	if not r then
-		return nil, "unwrap_resp_cb error " .. repr(errmsg)
-	end
-	-- now read rpb if any
-	if req.rpblen > 0 then 
-		local erpblen = req.rpblen + rxcore.MACLEN
-		erpb, errmsg = req.server:read(erpblen)
-		if (not erpb) or #erpb < erpblen then
-			return nil, "cannot read erpb " .. repr(errmsg)
-		end
-		r, errmsg = rxcore.unwrap_resp_pb(req, erpb)
-		if not r then
-			return nil, "unwrap_resp_pb error"
-		end
-	end
-	return req
-end --read_resp()
+	return status, resp
+end
 
 ------------------------------------------------------------------------
 -- rxc module and functions
@@ -103,34 +84,38 @@ end --read_resp()
 local rxc = {}
 
 
-function rxc.request_req(req)
-	-- send a pre-initialized request and read response
+function rxc.request_ctx(ctx, cmd, data)
+	-- send a request with a pre-initialized context and read response
 	-- allows to test specific params (reqtime, nonce, ...)
-	local r, errmsg
-	r, errmsg = send_request(req)
-	if not r then
-		return nil, errmsg
-	end
-	r, errmsg = read_response(req)
-	if not r then
-		return nil, errmsg
-	end
-	return req
-end --request_req()
+	-- return status, resp or raise an error
+	connect(ctx)
+	send_request(ctx, cmd, data)
+	return read_response(ctx)
+end --request_ctx()
 
-function rxc.request(rxs, p1, p2)
-	local r, errmsg
-	local req = { 
-		rxs = rxs,
-		p1 = p1 or "", 
-		p2 = p2 or "", 
-		rpb = "",
+function rxc.request(rxs, cmd, data)
+	-- send a request and read a response
+	-- rxs is the server object
+	local ctx = { 
+		smk = rxs.smk,
+		addr = rxs.addr,
+		port = rxs.port,
+		debug = rxs.debug,
 	}
-	r, errmsg = rxc.request_req(req)
-	if not r then 
-		return nil, errmsg
+	local ok, status, resp
+	if ctx.debug then 
+		ok, status, resp = xpcall(rxc.request_ctx, 
+			traceback, ctx, cmd, data)
+	else
+		ok, status, resp = pcall(rxc.request_ctx, ctx, cmd, data)
 	end
-	return req.rcode, req.rpb
+	if not ok then 
+		-- status is the error message
+		resp = tostring(rxc.state) .. ":: " .. status
+		status = nil
+	end
+	ctx.server:close()
+	return status, resp
 end --request()
 
 ------------------------------------------------------------------------

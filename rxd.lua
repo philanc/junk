@@ -1,4 +1,4 @@
--- Copyright (c) 2018  Phil Leblanc  -- see LICENSE file
+-- Copyright (c) 2019  Phil Leblanc  -- see LICENSE file
 
 ------------------------------------------------------------------------
 --[[ 
@@ -52,286 +52,233 @@ local rxcore = require "rxcore"
 -- the rx server object
 -- make it global (so it can be used in conf chunks)
 rxd = {}
+rxd.handlers = {} -- handler table
 
 
 -----------------------------------------------------------------------
 -- server - ban system and anti-replay and other utilities
 
 
-local function check_not_banned(req)
+local function check_not_banned(client_ip)
 	local r
-	r = req.rxs.whitelist[req.client_ip]
+	r = rxd.whitelist[client_ip]
 	if r then 
 		-- (whitelist overrides banned list)
 		return r 
 	end
-	r = not req.rxs.banned_ip_tbl[req.client_ip]
+	r = not rxd.banned_ip_tbl[client_ip]
 	if not r then
-		he.incr(req.rxs.banned_ip_tbl, req.client_ip)
-		if req.rxs.log_already_banned then 
+		he.incr(rxd.banned_ip_tbl, client_ip)
+		if rxd.log_already_banned then 
 			log("already banned ip, tries", 
-			    req.client_ip,
-			    req.rxs.banned_ip_tbl[req.client_ip])
+			    client_ip,
+			    rxd.banned_ip_tbl[client_ip])
 		end
 	end
 	return r
 end
 	
-local function ban_if_needed(req)
-	local tries = he.incr(req.rxs.ban_tries, req.client_ip)
-	if tries > req.rxs.ban_max_tries then
-		he.incr(req.rxs.banned_ip_tbl, req.client_ip)
-		req.rxs.log("BANNED", req.client_ip)
+local function ban_if_needed(client_ip)
+	local tries = he.incr(rxd.ban_tries, client_ip)
+	if tries > rxd.ban_max_tries then
+		he.incr(rxd.banned_ip_tbl, client_ip)
+		rxd.log("BANNED", client_ip)
 	end
 end
 
-local function ban_counter_reset(req)
+local function ban_counter_reset(client_ip)
 	-- clear the try-counter (after a valid request)
-	req.rxs.ban_tries[req.client_ip] = nil
+	rxd.ban_tries[client_ip] = nil
 	-- auto whitelist
-	req.rxs.whitelist[req.client_ip] = true
+	rxd.whitelist[client_ip] = true
 end
 
-local function init_ban_list(rxs)
+local function init_ban_list()
 	-- ATM, start with empty lists
-	rxs.ban_tries = {}
-	rxs.banned_ip_tbl = {}
-	rxs.whitelist = {}
+	rxd.ban_tries = {}
+	rxd.banned_ip_tbl = {}
+	rxd.whitelist = {}
 end
 	
-local function init_used_nonce_list(rxs)
+local function init_used_nonce_list()
 	-- ATM, start with empty list
-	rxs.nonce_tbl = {}
+	rxd.nonce_tbl = {}
 end
 	
-local function used_nonce(req)
+local function used_nonce(nonce)
 	-- determine if nonce has recently been used
 	-- then set it to used
-	local  r = req.rxs.nonce_tbl[req.nonce]
-	req.rxs.nonce_tbl[req.nonce] = true
+	local  r = rxd.nonce_tbl[nonce]
+	rxd.nonce_tbl[nonce] = true
 	return r
 end
 
 
 -- max difference between request time and server time
--- defined in server rxs.max_time_drift
+-- defined in server rxd.max_time_drift
 --
-local function time_is_valid(req)
-	return math.abs(os.time() - req.reqtime) < req.rxs.max_time_drift
+local function time_is_valid(reqtime)
+	return math.abs(os.time() - reqtime) < rxd.max_time_drift
 end
 
+local function read_request(ctx)
+	local ehdr, cmdlen, datalen, ecmd, edata, cmd, data
+	ctx.state = "get req hdr"
+	ehdr = assert(ctx.client:read(rxcore.EC_HDRLEN))
+	assert(#ehdr == rxcore.EC_HDRLEN, "invalid header")
+	ctx.reqtime, ctx.nonce = rxcore.get_reqtime_nonce(ehdr)
+	assert(time_is_valid(ctx.reqtime), "invalid req time")
+	assert(not used_nonce(ctx.nonce), "already used nonce")
+	cmdlen, datalen = assert(rxcore.decrypt_reqhdr(ctx, ehdr))
+	-- here, req header is valid => client is genuine
+	ctx.state = "get req cmd"
+	ban_counter_reset(ctx.client_ip)
+	cmd, data = "", ""
+	if cmdlen > 0 then 
+		ecmd = assert(ctx.client:read(cmdlen + rxcore.MACLEN))
+		cmd = rxcore.decrypt_cmd(ctx, ecmd)
+	end
+	if datalen > 0 then 
+		edata = assert(ctx.client:read(datalen + rxcore.MACLEN))
+		data = rxcore.decrypt_data(ctx, edata)
+	end
+	return cmd, data
+end --read_request()
 
-local function reject(req, msg1, msg2)
-	msg2 = msg2 or ""
-	-- the request is invalid
-	
-	ban_if_needed(req)
-	if req.rxs.log_rejected then
-		req.rxs.log("REJECTED", req.client_ip, msg1, msg2)
-	end
-	-- close the client connection
-	return false
-end
+local function send_response(ctx, status, resp)
+	local ehdr, eresp = rxcore.encrypt_resp(ctx, status, resp)
+	ctx.state = "send resp hdr"
+	assert(ctx.client:write(ehdr))
+	if eresp then 
+		ctx.state = "send resp"
+		assert(ctx.client:write(eresp))
+	end	
+	return true
+end --send_response()
 
-local function abort(req, msg1, msg2)
-	-- the request is valid but someting went wrong
-	-- close the client connection
-	if req.rxs.log_aborted then
-		req.rxs.log("ABORTED", req.client_ip, msg1, msg2)
-	end
-	return false
-end
-
-
-local function read_request(req)
-	local cb, ecb, errmsg, ep1, ep2, r
-	ecb, errmsg = req.client:read(rxcore.ECBLEN)
-	if (not ecb) or #ecb < rxcore.ECBLEN then
-		return reject(req, "cannot read req ecb", errmsg)
-	end
-	rxcore.get_reqtime_nonce(req, ecb)
-	if not time_is_valid(req) then 
-		return reject(req, "invalid req time")
-	end
-	if used_nonce(req) then
-		return reject(req, "already used nonce")
-	end
-	r, errmsg = rxcore.unwrap_req_cb(req, ecb)
-	if not r then 
-		return reject(req, errmsg)
-	end
-	-- req cb is valid => can reset try-counter if set
-	ban_counter_reset(req)
+local function handle_cmd(ctx, cmd, data)
+	-- return status:int, resp:string
 	--
-	-- now read p1, p2 if any
-	if req.p1len > 0 then 
-		local ep1len = req.p1len + rxcore.MACLEN
-		ep1, errmsg = req.client:read(ep1len)
-		if (not ep1) or #ep1 < ep1len then
-			return abort(req, "cannot read req ep1", errmsg)
-		end
-	end
-	if req.p2len > 0 then 
-		local ep2len = req.p2len + rxcore.MACLEN
-		ep2, errmsg = req.client:read(ep2len)
-		if (not ep2) or #ep2 < ep2len then
-			return abort(req, "cannot read req ep2", errmsg)
-		end
-	end
-	-- decrypt ep1, ep2 if any	
-	r, errmsg = rxcore.unwrap_req_pb(req, ep1, ep2)
-	if not r then
-		return abort(req, "unwrap_req_pb error")
-	end
-	return req
-end --read_req()
-
-rxd.handlers = {} -- handler table
-
-local function handle_cmd(req)
-	--
---~ 	he.pp(req)
-	-- log request (first loglen bytes only)
+--~ 	he.pp(ctx)
+	-- log cmd (first loglen bytes only)
 	local loglen = 50
-	local c = req.p1
+	local c = cmd
 	c = (#c < loglen) and c or (c:sub(1,loglen) .. "...")
 	c = c:gsub("%s+", " ")
-	req.rxs.log(strf("%s:%s %s", 
-		req.client_ip, tostring(req.client_port), repr(c) ))
+	rxd.log(strf("%s:%s %s", 
+		ctx.client_ip, tostring(ctx.client_port), repr(c) ))
 	
-	-- if p1 is empty, return server time in rcode (server "ping")
-	if #req.p1 == 0 then
-		req.rcode = os.time()
-		req.rpb = ""
-		return true
+	-- empty cmd: server "ping"
+	if #cmd == 0 then 
+		return 0, "" 
 	end
-	--
-	-- find the handler
-	local h, cmd = req.p1:match("^(%S-): (.*)$")
+	-- find the cmd handler
+	local h, handler
+	h, cmd = cmd:match("^(%S-): (.*)$")
 	if not h then 
-		req.rcode = 2
-		req.rpb = "no handler name"
-		return true
+		return 2, "no handler name"
 	end
-	local handler = rxd.handlers[h]
+	handler = ctx.handlers[h]
 	if not handler then 
-		req.rcode = 3
-		req.rpb = "unknown handler"
-		return true
+		return 3, "unknown handler"
 	end
 	-- call the handler
-	-- (handler signature: handler(req, cmd) => rcode, rpb)
-	req.rcode, req.rpb = handler(req, cmd)
-	return true
+	-- (handler signature: handler(ctx, cmd, data) => status, resp)
+	return handler(ctx, cmd, data)
 end --handle_cmd
 
-local function send_response(req)
-	local ercb, erpb, r, errmsg
-	r = rxcore.wrap_resp(req)
-	r, errmsg = req.client:write(req.ercb)
-	if not r then
-		return abort(req, "send resp cb error", errmsg)
+local function try_serve_client(ctx)
+	local cmd, data = read_request(ctx)
+	local status, resp = handle_cmd(ctx, cmd, data)
+	send_response(ctx, status, resp)
+end
+
+local function serve_client(client)
+	--
+	-- get client info
+	local client_ip, client_port = hesock.getclientinfo(client, true)
+	-- prepare context
+	local ctx = { 
+		smk = rxd.smk,
+		debug = rxd.debug,
+		handlers = rxd.handlers,
+		client = client,
+		client_ip = client_ip,
+		client_port = client_port,
+	}
+	local ok, r, errmsg
+	if ctx.debug then 
+		ok, r, errmsg = xpcall(try_serve_client, traceback, ctx)
+	else
+		ok, r, errmsg = pcall(try_serve_client, ctx)
 	end
-	if req.erpb then
-		r, errmsg = req.client:write(req.erpb)
-		if not r then
-			return abort(req, "send resp pb error", errmsg)
+	if not ok then 
+		errmsg = tostring(ctx.state) .. ":: " .. tostring(r) .. ":"tostring(errmsg)
+		if ctx.state == "get req hdr" then
+			-- invalid header
+			ban_if_needed(ctx.client_ip)
+			rxd.log("REJECTED", ctx.client_ip, errmsg)
+		else
+			rxd.log("ABORTED", ctx.client_ip, errmsg)
 		end
 	end
---~ 	print("sent response")
-	return true
-end --send_response()	
+	ctx.client:close()
+end
+
+	
 
 ------------------------------------------------------------------------
--- main server functions
-
-local function serve_client(rxs, client)
-	-- process a client request:
-	--    get a request from the client socket
-	--    call the command handler
-	--    send the response to the client
-	--    close the client connection
-	--    return to the server main loop
-	--
-	local r, errmsg
-	local client_ip, client_port = hesock.getclientinfo(client, true)
-	local req = {
-		rxs = rxs, 
-		client = client,
-		client_ip = client_ip, 
-		client_port = client_port,
-		-- utilities in req namespace
-		download = rxd.download,
-		upload = rxd.upload,
-		sh = rxd.sh,
-		sh0 = rxd.sh0,
-	}
-	r = check_not_banned(req)
-	    and read_request(req)
-	    and handle_cmd(req)
-	    and send_response(req)
-
---~ 	if r then
---~ 		rxs.log("served client", req.client_ip, req.client_port)
---~ 	end
-	hesock.close(client) 
-end--serve_client()
-
 -- the server main loop
-local function serve(rxs)
+
+local function serve()
 	-- server main loop:
 	-- 	wait for a client
 	--	call serve_client() to process client request
 	--	rinse, repeat
 	local client, r, msg
-	init_ban_list(rxs)
-	init_used_nonce_list(rxs)
-	rxs.bind_rawaddr = rxs.bind_rawaddr or 
-		hesock.make_ipv4_sockaddr(rxs.bind_addr, rxs.port)
---~ 	print(111, rxs.bind_addr, rxs.port, repr(rxs.bind_rawaddr))
-	local server = assert(hesock.bind(rxs.bind_rawaddr))
-	rxs.log(strf("server bound to %s port %d", 
-		rxs.bind_addr, rxs.port))
+	init_ban_list()
+	init_used_nonce_list()
+	rxd.bind_rawaddr = rxd.bind_rawaddr or 
+		hesock.make_ipv4_sockaddr(rxd.bind_addr, rxd.port)
+--~ 	print(111, rxd.bind_addr, rxd.port, repr(rxd.bind_rawaddr))
+	local server = assert(hesock.bind(rxd.bind_rawaddr))
+	rxd.log(strf("server bound to %s port %d", 
+		rxd.bind_addr, rxd.port))
 --~ 	print("getserverinfo(server)", hesock.getserverinfo(server, true))
 	
-	while not rxs.exitcode do
+	while not rxd.exitcode do
+--~ 		rxd.exitcode=11
 		client, msg = hesock.accept(server)
 		if not client then
-			rxs.log("rx serve(): accept error", msg)
-		elseif rxs.debug_mode then 
---~ 			rxs.log("serving client", client)
-			-- serve and close the connection
-			serve_client(rxs, client) 
---~ 			rxs.log("client closed.", client)
+			rxd.log("rxd serve(): accept error", msg)
 		else
-			r, msg = xpcall(serve_client, traceback, rxs, client)
-			if not r then
-				rxs.log("serve_client error", msg)
-			end
+			serve_client(client) 
 		end
 	end--while
 	if client then hesock.close(client); client = nil end
-	-- TODO should be: 	close_all_clients(rxs)
+	-- TODO should be: 	close_all_clients(rxd)
 	local r, msg = hesock.close(server)
-	rxs.log("server closed", r, msg)
-	return rxs.exitcode
+	rxd.log("server closed", r, msg)
+	return rxd.exitcode
 end--server()
 
 
 ------------------------------------------------------------------------
 -- handlers
 
-function rxd.handlers.lua(req, cmd)
+function rxd.handlers.lua(ctx, cmd, data)
 	-- execute lua 'cmd'; return rcode, rpb
 	local chunk, r, err, rcode, rpb
-	-- define req as local in chunk
-	-- (req is the first arg passed to chunk, chunk args is '...')
-	cmd = "local req = ({...})[1]; " .. cmd
+	-- define ctx as local in chunk
+	-- (ctx is the first arg passed to chunk, chunk args is '...')
+	cmd = "local ctx = ({...})[1]; " .. cmd
+	-- add data to ctx so it can be accessed by the lua chunk
+	ctx.data = data
 	chunk, err = load(cmd, "cmd", "bt")
 	if not chunk then
 		return 2, "invalid chunk: " .. err
 	end
-	r, err = chunk(req) -- must pass req to chunk
+	r, err = chunk(ctx) -- must pass ctx to chunk
 	-- chunk is assumed to return rpb, or nil, errmsg
 	if not r and not err then 
 		return 0, ""
@@ -342,10 +289,10 @@ function rxd.handlers.lua(req, cmd)
 	end
 end --rxd.handlers.lua
 
-function rxd.handlers.uld(req, cmd)
+function rxd.handlers.uld(ctx, cmd, data)
 	-- upload file to server
-	-- file content is req.p2, filename is cmd
-	local r, msg = he.fput(cmd, req.p2)
+	-- file content is data, filename is cmd
+	local r, msg = he.fput(cmd, data)
 	if not r then
 		return 1, msg
 	else
@@ -353,7 +300,7 @@ function rxd.handlers.uld(req, cmd)
 	end
 end
 
-function rxd.handlers.dld(req, cmd)
+function rxd.handlers.dld(ctx, cmd)
 	-- download file to client
 	-- filename is cmd
 	local r, msg = he.fget(cmd)
@@ -364,31 +311,31 @@ function rxd.handlers.dld(req, cmd)
 	end
 end
 
-function rxd.handlers.sh0(req, cmd)
+function rxd.handlers.sh0(ctx, cmd)
 	-- raw shell, no stdin, no NX definition
 	--
 	local r, exitcode = he.shell(s)
 	return exitcode, r
 end
 
-function rxd.handlers.sh(req, cmd)
-	-- basic shell, if #req.p2 > 0, stdin is in req.p2
+function rxd.handlers.sh(ctx, cmd, data)
+	-- basic shell, if #data > 0, stdin is in data
 	-- (default Lua popen cannot handle stdin and stdout
 	--  => copy input to a tmp file, then add input redirection
 	--  to the command)
-	-- an environment variable NX is defined with value req.nonce 
+	-- an environment variable NX is defined with value ctx.nonce 
 	-- as an hex string.
 	--
 	local r, exitcode, tmpdir, ifn, msg, nx
-	nx = he.stohex(req.nonce)
+	nx = he.stohex(ctx.nonce)
 	cmd = "NX=" .. nx .. "\n" .. cmd
-	if #req.p2 == 0 then
+	if #data == 0 then
 		r, exitcode = he.shell(cmd)
 		return exitcode, r
 	end
 	local tmpdir = rxd.tmpdir or '.'
 	local ifn = strf("%s/%s.in", tmpdir, nx)
-	local r, msg = he.fput(ifn, req.p2)
+	local r, msg = he.fput(ifn, data)
 	if not r then
 		return nil, "cannot store stdin"
 	end
@@ -412,7 +359,7 @@ rxd.max_time_drift = 300 -- max secs between client and server time
 rxd.ban_max_tries = 3  -- number of tries before being banned
 rxd.log_rejected = true 
 rxd.log_aborted = true
-rxd.debug_mode = true
+rxd.debug = true
 rxd.log_already_banned = true
 rxd.tmpdir = os.getenv"/tmp" or "/tmp"
 
@@ -430,6 +377,6 @@ end
 -- serve() return value can be used by a wrapping script to either
 -- stop or restart the server. convention is to restart server if 
 -- exitcode is 0.
-os.exit(serve(rxd))
+os.exit(serve())
 
 

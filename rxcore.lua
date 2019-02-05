@@ -1,4 +1,4 @@
--- Copyright (c) 2018  Phil Leblanc  -- see LICENSE file
+-- Copyright (c) 2019  Phil Leblanc  -- see LICENSE file
 
 ------------------------------------------------------------------------
 --[[ 
@@ -9,7 +9,7 @@
 ]]
 
 
-local VERSION = "0.3"
+local VERSION = "0.5"
 
 
 ------------------------------------------------------------------------
@@ -64,11 +64,10 @@ end
 ------------------------------------------------------------------------
 -- protocol elements
 
-local CBLEN = 8
+local HDRLEN = 8
 local ADLEN = 24
-local ECBLEN = ADLEN + CBLEN + MACLEN
-local ERCBLEN = CBLEN + MACLEN
-
+local EC_HDRLEN = ADLEN + HDRLEN + MACLEN  --encrypted cmd header length
+local ER_HDRLEN = HDRLEN + MACLEN  --encrypted resp header length
 
 local function timekey(mk, time)
 	-- derive a key based on time from master key mk
@@ -80,15 +79,15 @@ local function timekey(mk, time)
 end
 
 
-local cb_fmt = "<I4I4" -- c1, c2
-local ad_fmt = "<I8c16" -- reqtime, nonce
+local hdr_fmt = "<I4I4" -- (cmdlen, datalen) or (status, resplen)
+local ad_fmt = "<I8c16" -- (reqtime, nonce)
 
-local function pack_cb(c1, c2)
-	return spack(cb_fmt, c1, c2)
+local function pack_hdr(c1, c2)
+	return spack(hdr_fmt, c1, c2)
 end
 
-local function unpack_cb(cb)
-	return sunpack(cb_fmt, cb)
+local function unpack_hdr(hdr)
+	return sunpack(hdr_fmt, hdr)
 end
 
 local function pack_ad(reqtime, nonce)
@@ -103,95 +102,79 @@ end
 ------------------------------------------------------------------------
 -- request / response utilities 
 
-local function wrap_req(req)
-	-- after exec, encrypted control block is req.ecb
-	-- if needed, encrypted param blocks are req.ep1 and req.ep2
-	local p1 = req.p1 or ""
-	local p2 = req.p2 or ""
-	req.reqtime = req.reqtime or os.time()
-	req.nonce = req.nonce or hezen.randombytes(NONCELEN)
-	local cb = pack_cb(#p1, #p2)
-	local ad = pack_ad(req.reqtime, req.nonce)
-	req.tk = timekey(req.rxs.smk, req.reqtime)
-	req.ecb = encrypt(req.tk, req.nonce, cb, 0, ad) -- ctr=0
-	assert(#req.ecb == ECBLEN)
-	if #p1 > 0 then
-		req.ep1 = encrypt(req.tk, req.nonce, p1, 1) -- ctr=1
+local function encrypt_req(ctx, cmd, data)
+	data = data or ""
+	cmd = cmd or ""
+	local reqtime = ctx.reqtime or os.time()
+	ctx.tk = timekey(ctx.smk, reqtime)
+	ctx.nonce = ctx.nonce or hezen.randombytes(NONCELEN)
+	local hdr = pack_hdr(#cmd, #data)
+	local ad = pack_ad(reqtime, ctx.nonce)
+	local ehdr, ecmd, edata
+	ehdr = encrypt(ctx.tk, ctx.nonce, hdr, 0, ad) -- ctr=0
+	if #cmd > 0 then
+		ecmd = encrypt(ctx.tk, ctx.nonce, cmd, 1) -- ctr=1
 	end
-	if #p2 > 0 then
-		req.ep2 = encrypt(req.tk, req.nonce, p2, 2) -- ctr=2
+	if #data > 0 then
+		edata = encrypt(ctx.tk, ctx.nonce, data, 2) -- ctr=2
 	end
-	return req
+	return ehdr, ecmd, edata
 end
 
-local function get_reqtime_nonce(req, ecb)
-	-- allows to perform time and nonce validity checks before decrypting
-	-- ?? is it worthwhile? could just decrypt and check after...
-	-- anyway, don't check here!
-	req.reqtime, req.nonce = unpack_ad(ecb)
-	return req
+local function get_reqtime_nonce(ehdr)
+	-- not included in decrypt_reqhdr() to allow the server
+	-- to check reqtime and nonce validity before decrypting
+	return unpack_ad(ehdr)
 end
 
-local function unwrap_req_cb(req, ecb)
-	req.tk = timekey(req.rxs.smk, req.reqtime)
-	local cb = decrypt(req.tk, req.nonce, ecb, 0, ADLEN) -- ctr=0
-	if not cb then
-		return nil, "ecb decrypt error"
-	end
-	req.p1len, req.p2len = unpack_cb(cb)
-	return req
+local function decrypt_reqhdr(ctx, ehdr)
+	-- get_reqtime_nonce() must be called before decrypt_reqhdr()
+	-- to initialize ctx.reqtime and ctx.nonce
+	--
+	-- compute the reqtime-based key used for the request/response 
+	ctx.tk = timekey(ctx.smk, ctx.reqtime)
+	local hdr = assert(decrypt(ctx.tk, ctx.nonce, ehdr, 0, ADLEN), 
+		"reqlen decrypt error")  -- ctr=0
+	-- here the request issuer is assumed to be valid
+	ctx.reqhdr_is_valid = true
+	local cmdlen, datalen = unpack_hdr(hdr)
+	return cmdlen, datalen
 end
 
-local function unwrap_req_pb(req, ep1, ep2)
-	if ep1 then
-		req.p1 = decrypt(req.tk, req.nonce, ep1, 1) -- ctr=1
-		if not req.p1 then
-			return nil, "ep1 decrypt error"
-		end
-	else 
-		req.p1 = ""
-	end
-	assert(#req.p1 == req.p1len)
-	if ep2 then
-		req.p2 = decrypt(req.tk, req.nonce, ep2, 2) -- ctr=2
-		if not req.p2 then
-			return nil, "ep2 decrypt error"
-		end
-	else 
-		req.p2 = ""
-	end
-	assert(#req.p2 == req.p2len)
-	return req
+local function decrypt_cmd(ctx, ecmd)
+	return assert(decrypt(ctx.tk, ctx.nonce, ecmd, 1), 
+		"cmd decrypt error")  -- ctr=1
 end
 
-local function wrap_resp(req)
-	local ercb, erpb, r, errmsg
-	local rpb = req.rpb or ""
-	req.ercb = encrypt(req.tk, req.nonce, 
-			pack_cb(req.rcode, #rpb), 3) -- ctr=3 
-	if #rpb > 0 then 
-		req.erpb = encrypt(req.tk, req.nonce, rpb, 4) -- ctr=4
+local function decrypt_data(ctx, edata)
+	return assert(decrypt(ctx.tk, ctx.nonce, edata, 2), 
+		"cmd decrypt error")  -- ctr=2
+end
+
+local function encrypt_resp(ctx, status, resp)
+	local hdr = pack_hdr(status, #resp)
+	local ehdr, eresp
+	ehdr = encrypt(ctx.tk, ctx.nonce, hdr, 3) -- ctr=3
+	if #resp> 0 then
+		eresp = encrypt(ctx.tk, ctx.nonce, resp, 4) -- ctr=4
 	end
-	return req
+	return ehdr, eresp
+end
+	
+local function decrypt_resphdr(ctx, ehdr)
+	local hdr = assert(decrypt(ctx.tk, ctx.nonce, ehdr, 3), 
+		"resphdr decrypt error")  -- ctr=3
+	local status, resplen = unpack_hdr(hdr)
+	return status, resplen
+end
+
+local function decrypt_resp(ctx, eresp)	
+	local resp = assert(decrypt(ctx.tk, ctx.nonce, eresp, 4), 
+		"resp decrypt error")  -- ctr=4
+	return resp
 end
 
 
-local function unwrap_resp_cb(req, ercb)
-	local rcb = decrypt(req.tk, req.nonce, ercb, 3) -- ctr=3
-	if not rcb then
-		return nil, "ercb decrypt error"
-	end
-	req.rcode, req.rpblen = unpack_cb(rcb)	
-	return req
-end
-
-local function unwrap_resp_pb(req, erpb)
-	req.rpb = decrypt(req.tk, req.nonce, erpb, 4) -- ctr=4
-	if not req.rpb then
-		return nil, "erpb decrypt error"
-	end
-	return req
-end
 
 ------------------------------------------------------------------------
 -- configuration
@@ -231,21 +214,20 @@ end --load_rxd_config()
 -- rxcore module
 
 local rxcore = {
-	pack_cb = pack_cb,
-	unpack_cb = unpack_cb,
 	get_reqtime_nonce = get_reqtime_nonce,
-	wrap_req = wrap_req,
-	unwrap_req_cb = unwrap_req_cb,
-	unwrap_req_pb = unwrap_req_pb,
-	wrap_resp = wrap_resp,
-	unwrap_resp_cb = unwrap_resp_cb,
-	unwrap_resp_pb = unwrap_resp_pb,
+	encrypt_req = encrypt_req,
+	decrypt_reqhdr = decrypt_reqhdr,
+	decrypt_cmd = decrypt_cmd,
+	decrypt_data = decrypt_data,
+	encrypt_resp = encrypt_resp,
+	decrypt_resphdr = decrypt_resphdr,
+	decrypt_resp = decrypt_resp,
 
 	load_rxd_config = load_rxd_config,
 	
 	MACLEN = MACLEN,
-	ECBLEN = ECBLEN,
-	ERCBLEN = ERCBLEN,
+	EC_HDRLEN = EC_HDRLEN,  --encrypted cmd header length
+	ER_HDRLEN = ER_HDRLEN,  --encrypted resp header length
 	
 	VERSION = VERSION,
 }

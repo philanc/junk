@@ -49,54 +49,46 @@ rxd = assert(rxc.load_rxd_config())
 
 ------------------------------------------------------------------------
 
-	
--- prepare req
 
-req = { rxs = rxd }
---~ req.reqtime = (1 << 30)|1
---~ req.nonce = ("`"):rep(16)
---~ r = rx.make_req_ecb(req, 3, "abcdef")
---~ r = rx.make_req_ecb(req, 3, nil, 10)
---~ px(req.ecb)
---~ px(req.tk)
 
 local p1, p2, cmd, lua, sh
-local rcode, rpb
+local status, resp
 local r, msg, exitcode
 
 function test_0()  -- ping
-	rcode, rpb = rxc.request(rxd, "", "")
---~ 	print(111, repr(rcode), repr(rpb))
-	assert(rcode, "??? maybe server not started ???")
-	assert(math.abs(rcode - os.time()) < 300 )
-	assert(rpb=="")
+	status, resp = rxc.request(rxd, "", "")
+--~ 	print(111, repr(status), repr(resp))
+	assert(status, "??? maybe server not started ???")
+--~ 	assert(math.abs(status - os.time()) < 300 )
+	
+	assert(status == 0 and resp == "")
 	print("test_0:  ok")
 end
 
 function test_1()  -- lua with basic request()
 	cmd = "lua: x = 123 "  -- return nil
-	rcode, rpb = rxc.request(rxd, cmd, "")
-	assert(rcode==0)
-	assert(rpb=="")
+	status, resp = rxc.request(rxd, cmd, "")
+	assert(status==0)
+	assert(resp=="")
 	cmd = "lua: return'hello' "  -- return string
-	rcode, rpb = rxc.request(rxd, cmd, "")
-	assert(rcode==0)
-	assert(rpb=="hello")
+	status, resp = rxc.request(rxd, cmd, "")
+	assert(status==0)
+	assert(resp=="hello")
 	cmd = "lua: 3 + if "  -- syntax error
-	rcode, rpb = rxc.request(rxd, cmd, "")
---~ 	print(111, rcode, repr(rpb))
-	assert(rcode==2)
+	status, resp = rxc.request(rxd, cmd, "")
+--~ 	print(111, status, repr(resp))
+	assert(status==2)
 	cmd = "lua: return nil, 'some error' "  -- exec error
-	rcode, rpb = rxc.request(rxd, cmd, "")
-	assert(rcode==1)
-	assert(rpb=="some error")
-	cmd = [[lua: -- access req object
-	a = { ... }; req = a[1]
-	return req.rxs.smk
+	status, resp = rxc.request(rxd, cmd, "")
+	assert(status==1)
+	assert(resp=="some error")
+	cmd = [[lua: -- access ctx object
+	a = { ... }; ctx = a[1]
+	return ctx.smk
 	]]
-	rcode, rpb = rxc.request(rxd, cmd, "")
-	assert(rcode==0)
-	assert(rpb==rxd.smk)
+	status, resp = rxc.request(rxd, cmd, "")
+	assert(status==0)
+	assert(resp==rxd.smk)
 	print("test_1:  ok")
 end
 
@@ -113,7 +105,7 @@ function test_2()  -- run_basic_shell
 	-- test NX defined
 	sh = "echo $NX"
 	r, exitcode = rxc.shell(rxd, sh)
---~ 	print(111, repr(rcode), repr(rpb), #rpb)
+--~ 	print(111, repr(status), repr(resp), #resp)
 	assert(exitcode==0)
 	assert(r:match("^%x+\n"))	
 	assert(#he.strip(r) == 32)	
@@ -122,7 +114,7 @@ end
 function test_3()  -- lua 
 	-- req is the first chunk argument: ({...})[1]
 	-- lua() prefixes the chunk with req definition:
-	r, msg = rxc.lua(rxd, "return req.p2", "hello")
+	r, msg = rxc.lua(rxd, "return ctx.data", "hello")
 	assert(r=="hello")
 	assert(msg==nil)
 	-- syntax error
@@ -191,10 +183,10 @@ end
 
 function test_8()
 	for i = 1, 100 do 
-		rcode, rpb = rxc.request(rxd, "", "")
-		assert(rcode, "??? maybe server not started ???")
-		assert(math.abs(rcode - os.time()) < 300 )
-		assert(rpb=="")
+		status, resp = rxc.request(rxd, "", "")
+		assert(status, "??? maybe server not started ???")
+		assert(math.abs(status - os.time()) < 300 )
+		assert(resp=="")
 	end
 end
 

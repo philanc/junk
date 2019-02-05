@@ -1,9 +1,11 @@
 
 
 logfile=rxd.log
+redir=">> $logfile"
+redir=""
 
 echo "$(date) rxd.sh ($$) started"
-echo "$(date) rxd.sh ($$) started" >> $logfile
+echo "$(date) rxd.sh ($$) started" $redir
 
 # to kill rxd.sh process _and_ lua process below,
 # do 'kill $(pkill -P 123) 123' where 123 is the rxd.sh pid
@@ -14,7 +16,7 @@ echo "$(date) rxd.sh ($$) started" >> $logfile
 ### trap 'exit 2' INT
 
 while /bin/true ;  do
-	lua rxd.lua >> $logfile 2>&1
+	lua rxd.lua $redir 2>&1
 	status="$?" 
 	if [ $status != "0" -a $status != "143" ] ; then 
 		break
@@ -23,7 +25,7 @@ while /bin/true ;  do
 	sleep 1
 done
 
-echo "$(date -Iseconds) rxd.lua exited with code $status" >> $logfile
+echo "$(date -Iseconds) rxd.lua exited with code $status" $redir
 exit $status
 
 
