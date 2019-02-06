@@ -114,7 +114,10 @@ function rxc.request(rxs, cmd, data)
 		resp = tostring(rxc.state) .. ":: " .. status
 		status = nil
 	end
-	ctx.server:close()
+--~ 	print(ctx)
+	if ctx.server then 
+		ctx.server:close()
+	end
 	return status, resp
 end --request()
 

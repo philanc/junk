@@ -44,8 +44,9 @@ end
 
 local rxc = require 'rxc'
 
--- server info
-rxd = assert(rxc.load_rxd_config())
+
+-- configure the server info
+rxd = require "rxconf"
 
 ------------------------------------------------------------------------
 

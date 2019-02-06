@@ -26,8 +26,8 @@ end
 
 local rxc = require 'rxc'
 
-rxd = assert(rxc.load_rxd_config({config_filename = "rxd.conf.lua"}))
-
+-- configure the server info
+local rxd = require "rxconf"
 
 ------------------------------------------------------------------------
 -- utilities
@@ -108,7 +108,7 @@ grep "DPT=3761" syslog* \
 
 --~ shell[[ ps -opid,pgid,command ]]
 
---~ shell[[ tail rxd.log ]]
+shell[[ tail rxd.log ]]
 shell[[ date ]]
 
 --~ status, resp = rxc.request(rxd, "", "")

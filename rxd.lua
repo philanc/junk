@@ -230,7 +230,7 @@ end
 ------------------------------------------------------------------------
 -- the server main loop
 
-local function serve()
+function rxd.serve()
 	-- server main loop:
 	-- 	wait for a client
 	--	call serve_client() to process client request
@@ -364,19 +364,18 @@ rxd.log_already_banned = true
 rxd.tmpdir = os.getenv"/tmp" or "/tmp"
 
 -- load config
-rxd.config_filename="./rxd.conf.lua"
-local r, msg = rxcore.load_rxd_config(rxd)
-if not r then
-	rxd.log("rxd load_config error: " .. msg)
-	print("rxd load_config error", msg)
-	os.exit(2)
-end
+local conf = require "rxconf"
 
+-- copy conf values in rxd
+for k,v in pairs(conf) do rxd[k] = v end
 
+-- run the server
+os.exit(rxd.serve())
 
 -- serve() return value can be used by a wrapping script to either
 -- stop or restart the server. convention is to restart server if 
 -- exitcode is 0.
-os.exit(serve())
+
+--~ return rxd
 
 
