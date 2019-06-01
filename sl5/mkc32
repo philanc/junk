@@ -1,0 +1,3 @@
+MUBIN=/f/b/p11/cross-i586/bin/i586-linux-musl
+CC=$MUBIN-gcc
+$CC -static -o cst32 cst.c && ./cst32
