@@ -18,7 +18,8 @@
 #include <poll.h>	// poll
 #include <linux/dm-ioctl.h>	// dm ioctl
 #include <linux/loop.h>	// loop ioctl
-#include <sys/mount.h>	//  BLKGETSIZE64
+#include <linux/fb.h>	// framebuffer
+#include <sys/mount.h>	// BLKGETSIZE64
 #include <sys/socket.h>	// socket..
 #include <sys/un.h>	// AF_UNIX socket
 
@@ -168,7 +169,29 @@ void main() {
 	dispintx(POLLERR)
 	dispintx(POLLNVAL)
 	
-	
+	dispintx(FBIOGET_VSCREENINFO)
+	dispintx(FBIOGET_FSCREENINFO)
+	dispintx(FBIOGETCMAP)
+	dispintx(FB_VISUAL_TRUECOLOR)
+	dispintx(FB_VISUAL_DIRECTCOLOR)
+	dispintx(FB_VISUAL_PSEUDOCOLOR)
+	dispintx(FB_VISUAL_STATIC_PSEUDOCOLOR)
+	//~ dispintx()
+	//~ dispintx()
+	dispsize(struct fb_fix_screeninfo)
+	dispsize(struct fb_var_screeninfo)
+	dispsize(struct fb_cmap)
+	dispsize(struct fb_bitfield)
+	//~ dispsize()
+	struct fb_fix_screeninfo finfo;
+	struct fb_var_screeninfo vinfo;
+	dispint((char*)&vinfo.red - (char*)&vinfo)
+	dispint((char*)&vinfo.red.length - (char*)&vinfo)
+	dispint((char*)&vinfo.green.length - (char*)&vinfo)
+	dispint((char*)&vinfo.blue.length - (char*)&vinfo)
+	dispint((char*)&finfo.smem_len - (char*)&finfo)
+	//~ dispint((char*)&finfo.ywrapstep - (char*)&finfo)
+	dispint((char*)&finfo.line_length - (char*)&finfo)
 	
 	
 	printf("---\n");

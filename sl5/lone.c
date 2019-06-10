@@ -28,13 +28,6 @@
 #define LUA_C89_NUMBERS
 */
 
-/// sl5 defines
-#define LUA_USE_POSIX
-#define LUA_USE_STRTODHEX
-#define LUA_USE_AFORMA
-#define LUA_USE_LONGLONG
-
-
 /* no need to change anything below this line ----------------------------- */
 
 /* activate system definitions in lprefix.h */
@@ -61,13 +54,16 @@
 #define lvm_c
 #include "luaconf.h"
 
+
+
 /* do not export internal symbols */
 #undef LUAI_FUNC
-#undef LUAI_DDEC
+//~ #undef LUAI_DDEC
 #undef LUAI_DDEF
 #define LUAI_FUNC	static
-#define LUAI_DDEC	static
+//~ #define LUAI_DDEC	static
 #define LUAI_DDEF	static
+
 
 /* core -- used by all */
 #include "lapi.c"
@@ -112,3 +108,12 @@
 #include "linit.c"
 #endif
 
+/* lua */
+#ifdef MAKE_LUA
+#include "lua.c"
+#endif
+
+/* luac */
+#ifdef MAKE_LUAC
+#include "luac.c"
+#endif
