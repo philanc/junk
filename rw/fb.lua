@@ -41,7 +41,7 @@ end
 
 --~ return fb
 
-function test_fb0()
+function test_fb_info()
 	local fd, eno, em, r
 	local finfo, vinfo
 	fd, eno = l5.open(fbdevname, 0, 0)
@@ -75,7 +75,7 @@ function test_fb0()
 	print("R/G/B offsets     ", ro, go, bo)
 	print("R/G/B lengths     ", rlen, glen, blen)
 	print("R/G/B msb is right", rmb, gmb, bmb)
-	
+	--
 	fbh = assert(l5.fdopen(fd, 'r'))
 	fbmem = assert(fbh:read(smem_len))
 	print("read:", #fbmem)
@@ -92,7 +92,63 @@ function test_fb0()
 	local s = table.concat(t)
 	util.fput("fb.ppm", s)
 	assert(l5.close(fd))
-end
+end --test_fb_info
 
-test_fb0()
-	
+function test_fb_dump()
+	local fd, eno, em, r
+	local finfo, vinfo
+	fd, eno = l5.open(fbdevname, 0, 0)
+	assert(fd, errm(eno, "open /dev/fb"))
+	finfo = fb.get_fixinfo(fd)
+	vinfo = fb.get_varinfo(fd)
+	local smem_len, fbtype, typeaux, visual = sunpack("I4I4I4I4", finfo, 25) 
+--~ 	print(smem_len, type, typeaux, visual)
+--~ 	if fbtype == FB_TYPE_PACKED_PIXELS then
+--~ 		print("fb type:", "PACKED PIXELS")
+--~ 	else
+--~ 		print("fb type: unknown", fbtype)
+--~ 	end
+--~ 	print("fb size:", smem_len)
+--~ 	if visual == FB_VISUAL_TRUECOLOR then
+--~ 		print("visual:   ", "TRUECOLOR")
+--~ 	else
+--~ 		print("visual: unknown", visual)
+--~ 	end
+	local linelen = sunpack("I4", finfo, 49)
+--~ 	print("line length:", linelen)
+	local xres, yres, xresv, yresv, xoff, yoff, bpp, gray =
+		sunpack("I4I4I4I4I4I4I4I4", vinfo)
+--~ 	print("visible resolution", xres, yres)
+--~ 	print("virtual resolution", xresv, yresv)
+--~ 	print("offset            ", xoff, yoff)
+--~ 	print("bits per pixel    ", bpp)
+--~ 	print("color=0 else gray ", gray)
+	local ro,rlen,rmb,go,glen,gmb,bo,blen,bmb = sunpack(
+		"I4I4I4I4I4I4I4I4I4", vinfo, 33)
+--~ 	print("R/G/B offsets     ", ro, go, bo)
+--~ 	print("R/G/B lengths     ", rlen, glen, blen)
+--~ 	print("R/G/B msb is right", rmb, gmb, bmb)
+	--
+	fbh = assert(l5.fdopen(fd, 'r'))
+	fbmem = assert(fbh:read(smem_len))
+--~ 	print("read:", #fbmem)
+	local t = {}
+	insert(t, strf("P6 %d %d %d\n", xres, yres, 255))
+	for i = 1, smem_len, 4 do
+		insert(t, char(
+			byte(fbmem, i+2), 
+			byte(fbmem, i+1), 
+			byte(fbmem, i)
+			)
+		)
+	end
+	local s = table.concat(t)
+	util.fput("fb.ppm", s)
+	assert(l5.close(fd))
+end --test_fb_dump
+
+------------------------------------------------------------------------
+
+--~ test_fb_info()
+
+test_fb_dump()
