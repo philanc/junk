@@ -68,7 +68,7 @@ function bootsector(size, diskid, label)
 	return s
 end
 
-function emptyfat(nbsectors)
+function emptyfat(nbfatsec)
 	local s = "\xf8\xff" -- FAT16 id
 		.. "\xff\xff" -- end of cluster chain marker
 	return rpad(s, nbsectors * 512, "\0")
