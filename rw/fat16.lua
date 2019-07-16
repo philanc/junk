@@ -71,7 +71,7 @@ end
 function emptyfat(nbfatsec)
 	local s = "\xf8\xff" -- FAT16 id
 		.. "\xff\xff" -- end of cluster chain marker
-	return rpad(s, nbsectors * 512, "\0")
+	return rpad(s, nbfatsec * 512, "\0")
 end
 
 
