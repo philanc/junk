@@ -2,16 +2,30 @@
 ------------------------------------------------------------------------
 --[[
 
-FAT16 support functions
+FAT16 - simplest code to make an image of a FAT16-formatted filesystem
 
-Assumes 512-byte sectors
 
-All integers are little endians
 
-a good reference:
+Notes:
+
+- a good reference is the wikipedia page:
 https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system
 
+- to keep the code simple some parameters are fixed:
+	- the code assumes 512-byte sectors
+	- cluster size: 8 sectors (4 kbytes)
+		=> max volume size < 256 mbytes
+	- number of entries in the root directory: 64
+	- the boot code is ignored (set to zero)
+	- the API allows to create only images with a size 
+	  multiple of 1 mbytes (it eliminates the rounding issues)
 
+- all integers are stored little endian
+
+- the root directory is completely empty. the code doesn't insert 
+  an entry with the volume label
+
+  
 ]]
 
 
@@ -29,21 +43,17 @@ local fget, fput = util.fget, util.fput
 fat16 = {}
 
 
-function makeimg(size, diskid, label)
-	-- make a FAT16-formatted disk image
-	-- return the image as a string
-end
-
-
-function emptyfat(nbfatsec)
+local function emptyfat(nbfatsec)
+	-- return an empty fat as a string
+	-- nbfatsec is the number of sectors used by the fat
 	-- f8ff - FAT16 id
 	-- ffff - end of cluster chain marker
 	return rpad("\xf8\xff\xff\xff", nbfatsec * 512, "\0")
 end
 
-function img_header(sizemb, diskid, label)
+function fat16.header(sizemb, diskid, label)
 	-- return the header of a FAT16 filesystem image
-	-- (including the boot sector and two FATs)
+	-- (including the boot sector and two FATs and the root directory)
 	-- sizemb is the image size in MBytes (eg. 10 for a 10MB image)
 	-- diskid is the disk identifier (or serial number) as an integer
 	-- label is the volume label as a string (11 chars or less)
@@ -60,6 +70,7 @@ function img_header(sizemb, diskid, label)
 	local nbfatsec = fatsize // 512  -- number of sectors in each fat
 	local fat1 = emptyfat(nbfatsec)
 	local fat2 = fat1
+	local rootdir = ('\0'):rep(32 * 64) -- 64 entries of 32 bytes
 	local st = {
 	-- first bytes are x86 inst to jump to boot code
 	-- is it used as a signature?  
@@ -87,12 +98,23 @@ function img_header(sizemb, diskid, label)
 	"\x55\xaa",	-- end of boot sector signature
 	fat1,
 	fat2,
+	rootdir,
 	}
 	local s = table.concat(st)
-	assert(#s == 512 + 2*fatsize)
+	assert(#s == 512 + 2*fatsize + #rootdir)
 	return s
 end
 
+function fat16.img(sizemb, diskid, label)
+	-- return an empty FAT16 filesystem image as a string
+	-- sizemb is the image size in MBytes (eg. 10 for a 10MB image)
+	-- diskid is the disk identifier (or serial number) as an integer
+	-- label is the volume label as a string (11 chars or less)
+	local header = fat16.header(sizemb, diskid, label)
+	-- the rest of the image is filled with zero.
+	local size = sizemb * 1024 * 1024
+	return rpad(header, size, "\0")
+end
 
 
 --~ return fat16
@@ -101,14 +123,14 @@ end
 -- tests
 
 require"hei"
-sizemb = 20
+sizemb = 100
 diskid = 0x89abcdef
 label = "ABCDEF"
-h = img_header(sizemb, diskid, label)
+h = fat16.header(sizemb, diskid, label)
 pix(#h)
 
-img=rpad(h, sizemb * 1024 * 1024, "\0")
-fput("f20a", img)
+img=fat16.img(sizemb, diskid, label)
+fput("f100", img)
 
 
 
