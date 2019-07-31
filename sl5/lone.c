@@ -16,10 +16,13 @@
 /*
 #define LUA_USE_LINUX
 #define LUA_USE_MACOSX
-#define LUA_USE_POSIX
 #define LUA_USE_DLOPEN
 #define LUA_USE_READLINE
 */
+
+// fix the io.popen() not supported issue. must build with this:
+#define LUA_USE_POSIX
+
 
 /* other specific features */
 /*

@@ -5,7 +5,7 @@
 LUA= ../../lua-5.3.5/src
 L5= ../../l5
 LZ= ../../luazen/src
-LN= ../../slua/src/linenoise
+LN= ../../slua/src
 
 CC= /opt/musl/bin/musl-gcc
 AR= ar
