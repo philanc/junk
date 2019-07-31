@@ -1,6 +1,6 @@
 -- Copyright (c) 2019  Phil Leblanc  -- see LICENSE file
 ------------------------------------------------------------------------
--- L5 tty mode functions
+-- Linux framebuffer functions
 
 
 local l5 = require "l5"

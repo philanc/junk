@@ -588,8 +588,8 @@ static int pmain (lua_State *L) {
 	lua_pushcfunction(L, luaopen_l5);
 	lua_setfield(L, -2, "l5");
 	/// lz
-	int luaopen_lz(lua_State *L); 
-	lua_pushcfunction(L, luaopen_lz);
+	int luaopen_luazen(lua_State *L); 
+	lua_pushcfunction(L, luaopen_luazen);
 	lua_setfield(L, -2, "lz");
 	///
 	/// remove _PRELOAD table
