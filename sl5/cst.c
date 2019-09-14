@@ -3,6 +3,9 @@
 // a temp, crude tool to explore constants, types and struct sizes
 // on various architectures
 
+// next is added to get  POLLRDHUP
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -153,6 +156,7 @@ void main() {
 	dispintx(SOCK_CLOEXEC)
 	dispintx(SOL_SOCKET)
 	dispintx(SO_KEEPALIVE)
+	dispintx(SO_REUSEADDR)
 	dispintx(MSG_DONTWAIT)
 	//~ dispintx()
 	
@@ -166,8 +170,14 @@ void main() {
 	dispintx(POLLIN)
 	dispintx(POLLOUT)
 	dispintx(POLLHUP)
+	dispintx(POLLRDHUP) // unknown without defined  _GNU_SOURCE
 	dispintx(POLLERR)
 	dispintx(POLLNVAL)
+
+	dispintx(FIONBIO)
+	
+	
+	// FRAMEBUFFER
 	
 	dispintx(FBIOGET_VSCREENINFO)
 	dispintx(FBIOGET_FSCREENINFO)
