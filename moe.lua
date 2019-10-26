@@ -22,18 +22,20 @@ local b64encode, b64decode
 
 -- use luazen if it is available and built with morus, else use plc.morus
 
+local r
 
-local lz = perror(require, "luazen")
+local r, lz = pcall(require, "luazen")
 
-if lz and lz.morus_encrypt then 
+if r and lz.morus_encrypt then 
 	encrypt = lz.morus_encrypt
 	decrypt = lz.morus_decrypt
 	hash = lz.morus_xof
 	b64encode = lz.b64encode
 	b64decode = lz.b64decode
 else 
-	local mo = assert(perror(require, "plc.morus"))
-	local b64 = assert(perror(require, "plc.base64"))
+	local mo, b64
+	mo = require("plc.morus")
+	b64 = require("plc.base64")
 	encrypt = mo.encrypt
 	decrypt = mo.decrypt
 	hash = mo.xof
@@ -41,7 +43,7 @@ else
 	b64decode = b64.decode	
 end
 
-local function newnonce(n, i)
+function moe.newnonce(n, i)
 	-- if n and i are empty, generate a new nonce.
 	-- else add i to nonce n (a noncelen-byte string)
 	if not n then
@@ -73,19 +75,22 @@ end
 
 function moe.encrypt(k, n, p, armor)
 	-- encrypt string p. 
+	-- the nonce is prepended to the encrypted result
 	-- if armor is true, base64-encode the encrypted result
-	local c = encrypt(k, n, p)
-	if armor then c = b64encode(c)
+	local c = n .. encrypt(k, n, p)
+	if armor then c = b64encode(c) end
 	return c
 end
 
-function moe.decrypt(k, n, c, armor)
+function moe.decrypt(k, c, armor)
 	-- decrypt string c. if armor, assume c is base64-encoded.
 	local msg
 	if armor then
 		c, msg = b64decode(c)
 		if not c then return nil, msg end
 	end
+	local n = c:sub(1, noncelen)
+	c = c:sub(noncelen+1)
 	local p
 	p, msg = decrypt(k, n, c)
 	if not p then return nil, msg end
@@ -93,6 +98,16 @@ function moe.decrypt(k, n, c, armor)
 end
 
 
+------------------------------------------------------------------------
+
+local k = ('k'):rep(32)
+local n = moe.newnonce()
+print("#n, n:", #n, b64encode(n))
+local p, p2, c, msg
+p = "hello"
+c = moe.encrypt(k, n, p, true)
+print("#c, c:", #c, c)
+print(moe.decrypt(k, c, true))
 
 	
 	
