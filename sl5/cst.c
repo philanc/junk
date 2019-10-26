@@ -16,7 +16,7 @@
 #include <unistd.h>	// getpid, stat
 #include <dirent.h>	// dir...
 #include <termios.h>	// termios
-#include <sys/ioctl.h>	// TCGETS
+#include <sys/ioctl.h>	// TCGETS, netif
 #include <fcntl.h>	// open flags
 #include <poll.h>	// poll
 #include <linux/dm-ioctl.h>	// dm ioctl
@@ -26,6 +26,8 @@
 #include <sys/socket.h>	// socket..
 #include <sys/un.h>	// AF_UNIX socket
 
+// #include <sys/ioctl.h>  // for network interfaces (already incl)
+#include <net/if.h>	// for network interfaces (netif)
 
 #define dispint(x)	printf(#x " = %d\n", x);
 #define dispintx(x)	printf(#x " = 0x%08x\n", x);
@@ -203,6 +205,15 @@ void main() {
 	//~ dispint((char*)&finfo.ywrapstep - (char*)&finfo)
 	dispint((char*)&finfo.line_length - (char*)&finfo)
 	
+	// netif
+	dispint(IFNAMSIZ)
+	dispintx(SIOCGIFADDR)
+	dispintx(SIOCSIFADDR)
+	dispsize(struct ifreq)
+	struct ifreq ifr;
+	dispsize(ifr.ifr_addr)
+	dispsize(ifr.ifr_map)
+	dispint((char*)&ifr.ifr_ifindex - (char*)&ifr)
 	
 	printf("---\n");
 }
