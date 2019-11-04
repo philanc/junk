@@ -13,6 +13,7 @@ local moe = {} -- the moe module table
 local bsize = 1048576 -- blocksize = 1 MByte
 
 local noncelen = 16
+local maclen = 16
 local keylen = 32
 
 local encrypt -- encrypt(k, n, plain) 
@@ -73,6 +74,8 @@ function moe.stok(s)
 	return s
 end
 
+-- string encryption
+
 function moe.encrypt(k, n, p, armor)
 	-- encrypt string p. 
 	-- the nonce is prepended to the encrypted result
@@ -95,6 +98,55 @@ function moe.decrypt(k, c, armor)
 	p, msg = decrypt(k, n, c)
 	if not p then return nil, msg end
 	return p
+end
+
+-- block encryption (used for large files)
+
+-- encrypted block is bsize (1 MB)
+
+-- plain text block is smaller to accomodate the MAC for each block
+-- and the nonce for the first block. The same nonce is reused 
+-- (and incremented) for each block
+
+local plain_blocklen = bsize - maclen
+local plain_1st_blocklen = bsize - maclen - noncelen
+
+
+local function encrypt_block(k, n, pblk, blkidx)
+	-- blkidx is the block index. 
+	-- 	(starting at 1, should be incremented for each block)
+	-- pblk is the plaintext block to encrypt
+	-- k is the key
+	-- n is the orginal nonce (prepended to the first encrypted block)
+	if blkidx == 1 then -- 1st block
+		assert(#pblk <= plain_1st_blocklen, "blocklen error")
+		local cblk = n .. encrypt(k, n, plk)
+		return cblk
+	else -- other blocks
+		assert(#pblk <= plain_blocklen, "blocklen error")
+		n = moe.newnonce(n, blkidx)
+		local cblk = n .. encrypt(k, n, plk)
+		return cblk
+	end
+end
+
+local function get_nonce(c)
+	return c:sub(1, noncelen)
+end
+
+local function decrypt_block(k, n1, cblk, blkidx)
+	-- n1 is the nonce extracted from the 1st block
+	local pblk, errmsg, n
+	if blkidx == 1 then -- 1st block
+		-- decrypt starting after the nonce
+		-- nonce is used as-is
+		n = n1
+		pblk, errmsg = decrypt(k, n, cblk:sub(noncelen + 1))
+	else -- other blocks
+		n = newnonce(n, blkidx)
+		pblk, errmsg = decrypt(k, n, cblk)
+	end
+	return pblk, errmsg
 end
 
 
