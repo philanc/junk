@@ -1,21 +1,31 @@
+-- Copyright (c) 2019  Phil Leblanc  -- see LICENSE file
+------------------------------------------------------------------------
+--[[ 
 
+opensshkeys.lua - parsing OpenSSH ed25519 key files
+
+parse_private_key   - parse an unencrypted private key file content
+parse_public_key    - parse a public key file content
+
+Notes:
+
+- keys are returned as binary strings (no hex or base64 encoding).
+
+- here, the raw secret key is returned (a 32-byte binary string) 
+  contrary to the usual APIs where the public key (32-byte) is 
+  concatenated at the end of the private key, for a total private key 
+  length of 64 bytes. 
+
+]]
+------------------------------------------------------------------------
 local he = require "he"
 local b64 = require "plc.base64"
-local pk = he.fget("aaa.pub")
 
-local pkl = he.split(pk)
+------------------------------------------------------------------------
 
---~ he.pp(pkl)
---~ print(pkl[1], pkl[3])
-local ks = b64.decode(pkl[2])
---~ print(he.repr(ks))
---~ print(#k)
-local kalgo, k = string.unpack(">s4s4", ks)
---~ print(#kalgo, kalgo, "#key:", #k)
---~ print(b64.encode(k))
+local sshkeys = {}
 
-
-local function parse_ssh_private_key(txt)
+function sshkeys.parse_private_key(txt)
 	-- parse an openssh-generated private key file content
 	-- return the secret and public keys (as 32-byte binary strings)
 	-- or nil, errmsg if text cannot be parsed
@@ -37,9 +47,9 @@ local function parse_ssh_private_key(txt)
 	local sk, pk = privk:sub(1, 32), privk:sub(33)
 	assert(pk == pubk)
 	return sk, pk, comment
-end --parse_ssh_private_key()
+end --parse_private_key()
 
-local function parse_ssh_public_key(txt)
+function sshkeys.parse_public_key(txt)
 	-- return the public key (as a binary string)
 	-- and the key comment if any
 	local pkl = he.split(txt)
@@ -51,49 +61,8 @@ local function parse_ssh_public_key(txt)
 		return nil, "not a ssh-ed25519 key" 
 	end
 	return pk, comment
-end --parse_ssh_public_key()
+end --parse_public_key()
 
 ------------------------------------------------------------------------
--- quick test
-
--- generate a key with:   ssh-keygen -t ed25519 -f aaa
--- it should create two files in current directory ('aaa' the private key, 
--- and 'aaa.pub' the public key)
-
-local sk, pk, pk2, msg, comment, comment2
-
--- parse the content of the private key file 
-
-local priv = he.fget("aaa")
-
-local sk, pk, comment = parse_ssh_private_key(priv)
-print("private key comment:", comment)
-if not sk then --error
-	msg = pk
-	print("ERROR:", msg)
-	return
-end
-
-assert(#pk == 32)
-assert(#sk == 32)
-
--- check that pk is indeed the public key for secret key sk
-local lz = require "luazen"
-pk2 = lz.x25519_sign_public_key(sk)
-assert(pk2==pk)
-
--- parse the content of the public key file 
-
-local pub = he.fget("aaa.pub")
-pk2, comment2 = parse_ssh_public_key(pub)
-if not pk2 then --error
-	msg = comment2
-	print("ERROR:", msg)
-	return
-end
-print("public key comment:", comment2)
-
-assert(pk2 == pk)
-
-
+return sshkeys
 
