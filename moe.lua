@@ -10,61 +10,66 @@ local insert, concat = table.insert, table.concat
 ------------------------------------------------------------------------
 local moe = {} -- the moe module table
 
+moe.VERSION = "0.1"
+
 local bsize = 1048576 -- blocksize = 1 MByte
 
 local noncelen = 16
 local maclen = 16
 local keylen = 32
 
+moe.noncelen = noncelen
+moe.maclen = maclen
+moe.keylen = keylen
+
+
 local encrypt -- encrypt(k, n, plain) 
 local decrypt -- decrypt(k, n, encr)
 local hash    -- hash(s, diglen)
+local newnonce  -- return noncelen random bytes as a string
 local b64encode, b64decode
 
 -- use luazen if it is available and built with morus, else use plc.morus
 
 local r
 
-local r, lz = pcall(require, "luazen")
+local r, lz = pcall(require, "luazenq")
 
 if r and lz.morus_encrypt then 
+	moe.cryptolib = "luazen"
+	moe.noncegen = "randombytes"
 	encrypt = lz.morus_encrypt
 	decrypt = lz.morus_decrypt
 	hash = lz.morus_xof
 	b64encode = lz.b64encode
 	b64decode = lz.b64decode
+	newnonce = function() return lz.randombytes(noncelen) end
 else 
 	local mo, b64
 	mo = require("plc.morus")
 	b64 = require("plc.base64")
+	moe.cryptolib = "plc"
 	encrypt = mo.encrypt
 	decrypt = mo.decrypt
 	hash = mo.xof
 	b64encode = b64.encode
 	b64decode = b64.decode	
-end
-
-function moe.newnonce(n, i)
-	-- if n and i are empty, generate a new nonce.
-	-- else add i to nonce n (a noncelen-byte string)
-	if not n then
-		-- generate a new nonce
-		-- (nonce doesn't have to be random. just not reused.)
-		if lz then
-			n = lz.randombytes(noncelen)
-		else
-			n = hash(os.time()..os.clock(), noncelen)
-		end
-		return n
+	local devrandom = io.open("/dev/urandom", "r")
+	if devrandom then
+		newnonce = function() return devrandom:read(noncelen) end
+		moe.noncegen = "/dev/urandom"
+	else
+		newnonce = function() 
+			return hash(os.time()..os.clock(), noncelen)
+			end
+		moe.noncegen = "time-based"
 	end
-	local n1 = sunpack("<i8", n)
-	n1 = n1 + i  -- no overflow here. Lua integer addition rolls over.
-	return spack("<i8", n1) .. n:sub(9)
 end
 
 function moe.stok(s)
 	-- take a key string and generate a key
-	-- (used for example to generate keys from a keyfile)
+	-- (can be used for example to generate keys from a keyfile;
+	-- this is _not_ a password key derivation function)
 	local minlen = 1024
 	-- ensure s is at least minlen bytes
 	local slen = #s
@@ -76,10 +81,14 @@ end
 
 -- string encryption
 
-function moe.encrypt(k, n, p, armor)
-	-- encrypt string p. 
+function moe.encrypt(k, p, armor, n)
+	-- encrypt string p with key k
+	-- nonce n is optional, it can be provided to obtain 
+	-- a deterministic result (eg. for tests) but it is usually
+	-- not provided. A random nonce is then generated.
 	-- the nonce is prepended to the encrypted result
-	-- if armor is true, base64-encode the encrypted result
+	-- if armor is true, the encrypted result is base64-encoded. 
+	n = n or newnonce()
 	local c = n .. encrypt(k, n, p)
 	if armor then c = b64encode(c) end
 	return c
@@ -100,66 +109,27 @@ function moe.decrypt(k, c, armor)
 	return p
 end
 
--- block encryption (used for large files)
-
--- encrypted block is bsize (1 MB)
-
--- plain text block is smaller to accomodate the MAC for each block
--- and the nonce for the first block. The same nonce is reused 
--- (and incremented) for each block
-
-local plain_blocklen = bsize - maclen
-local plain_1st_blocklen = bsize - maclen - noncelen
-
-
-local function encrypt_block(k, n, pblk, blkidx)
-	-- blkidx is the block index. 
-	-- 	(starting at 1, should be incremented for each block)
-	-- pblk is the plaintext block to encrypt
-	-- k is the key
-	-- n is the orginal nonce (prepended to the first encrypted block)
-	if blkidx == 1 then -- 1st block
-		assert(#pblk <= plain_1st_blocklen, "blocklen error")
-		local cblk = n .. encrypt(k, n, plk)
-		return cblk
-	else -- other blocks
-		assert(#pblk <= plain_blocklen, "blocklen error")
-		n = moe.newnonce(n, blkidx)
-		local cblk = n .. encrypt(k, n, plk)
-		return cblk
-	end
-end
-
-local function get_nonce(c)
+function moe.getnonce(c)
 	return c:sub(1, noncelen)
 end
 
-local function decrypt_block(k, n1, cblk, blkidx)
-	-- n1 is the nonce extracted from the 1st block
-	local pblk, errmsg, n
-	if blkidx == 1 then -- 1st block
-		-- decrypt starting after the nonce
-		-- nonce is used as-is
-		n = n1
-		pblk, errmsg = decrypt(k, n, cblk:sub(noncelen + 1))
-	else -- other blocks
-		n = newnonce(n, blkidx)
-		pblk, errmsg = decrypt(k, n, cblk)
-	end
-	return pblk, errmsg
-end
-
-
 ------------------------------------------------------------------------
-
+require"hei" ; he.pp(moe)
 local k = ('k'):rep(32)
-local n = moe.newnonce()
-print("#n, n:", #n, b64encode(n))
 local p, p2, c, msg
 p = "hello"
-c = moe.encrypt(k, n, p, true)
-print("#c, c:", #c, c)
-print(moe.decrypt(k, c, true))
+c = moe.encrypt(k, p, true)
+--~ print("#c, c:", #c, c)
+assert(moe.decrypt(k, c, true) == p)
 
-	
-	
+x=1024*1
+p = ("a"):rep(x)
+a=os.clock()
+c = moe.encrypt(k, p)
+b=os.clock()
+print("clock", a, b, (b-a)*1000)	
+--~ print(lz)
+--~ print(os.clock())
+--~ for i = 1,1000000 do x = lz.randombytes(16) end
+--~ print(os.clock())
+--~ print(x)
