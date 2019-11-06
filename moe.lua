@@ -5,7 +5,26 @@
 
 === moe - morus-based encryption 
 
-(here, moe is not related to anime :-)
+-- (here, moe is not related to anime :-)
+
+moe functions:
+encrypt()     encrypt a string; optionnally base64-encode the result
+decrypt()     decrypt a string, optionnaly base64-encoded
+fhencrypt()   encrypt from/to open file handles
+fhdecrypt()   decrypt from/to open file handles
+getnonce()    extract the nonce from an encrypted string
+stok()        generate a key from a keyfile content
+use()         select a crypto implementation or return the current one
+
+moe constants:
+VERSION       moe library version
+keylen        key length (in bytes)
+noncelen      nonce length (in bytes)
+maclen        authentication tag (MAC) length (in bytes)
+cryptolib     name of the crypto library (currently "luazen" or "plc")
+noncegen      name of the mechanism used to generate new nonces
+              (currently "randombytes" or "/dev/urandom" or "time-based")
+
 
 ]]
 
@@ -18,16 +37,11 @@ local insert, concat = table.insert, table.concat
 ------------------------------------------------------------------------
 local moe = {} -- the moe module table
 
-moe.VERSION = "0.1"
+moe.VERSION = "0.2"
 
-local noncelen = 16
-local maclen = 16
-local keylen = 32
-
-moe.noncelen = noncelen
-moe.maclen = maclen
-moe.keylen = keylen
-
+moe.noncelen = 16
+moe.maclen = 16
+moe.keylen = 32
 
 local encrypt -- encrypt(k, n, plain) 
 local decrypt -- decrypt(k, n, encr)
@@ -35,9 +49,67 @@ local hash    -- hash(s, diglen)
 local newnonce  -- return noncelen random bytes as a string
 local b64encode, b64decode
 
--- use luazen if it is available and built with morus, else use plc.morus
 
-local r
+function moe.use(crypto)
+	-- select what crypto and psudo-random implementation to use
+	-- crypto is an optional string with following values:
+	--	"luazen" or "plc"
+	-- if not provided, use() returns the currently selected crypto
+	-- and and source used for nonces as strings
+	if not crypto then return moe.cryptolib, moe.noncegen end
+	local r, lz, mo, b64
+	if crypto == "luazen" then
+		r, lz = pcall(require, "luazen")
+		if not (r and lz.morus_encrypt) then return false end
+		moe.cryptolib = "luazen"
+		moe.noncegen = "randombytes"
+		encrypt = lz.morus_encrypt
+		decrypt = lz.morus_decrypt
+		hash = lz.morus_xof
+		b64encode = lz.b64encode
+		b64decode = lz.b64decode
+		newnonce = function() 
+			return lz.randombytes(moe.noncelen) 
+		end
+		return true
+	elseif crypto == "plc" then
+		r, mo = pcall(require, "plc.morus")
+		if not r then return false, "plc.morus not found" end
+		r, b64 = pcall(require, "plc.base64")
+		if not r then return false, "plc.base64 not found" end
+		moe.cryptolib = "plc"
+		encrypt = mo.encrypt
+		decrypt = mo.decrypt
+		hash = mo.xof
+		b64encode = b64.encode
+		b64decode = b64.decode	
+		local devrandom = io.open("/dev/urandom", "r")
+		if devrandom then
+			newnonce = function() 
+				return devrandom:read(moe.noncelen) 
+				end
+			moe.noncegen = "/dev/urandom"
+		else
+			newnonce = function() 
+				return hash(os.time()..os.clock(), moe.noncelen)
+				end
+			moe.noncegen = "time-based"
+		end
+		return true
+	else
+		return false, "unknown crypto"
+	end
+end --moe.use()
+
+-- use luazen if it is available and built with morus, else use plc.morus
+-- can be overridden by program by calling moe.use()
+
+local r, msg = moe.use("luazen")
+if not r then r, msg = moe.use(plc) end
+if not r then 
+	print("no available crypto.", msg)
+end
+
 
 local r, lz = pcall(require, "luazen")
 
@@ -49,7 +121,7 @@ if r and lz.morus_encrypt then
 	hash = lz.morus_xof
 	b64encode = lz.b64encode
 	b64decode = lz.b64decode
-	newnonce = function() return lz.randombytes(noncelen) end
+	newnonce = function() return lz.randombytes(moe.noncelen) end
 else 
 	local mo, b64
 	mo = require("plc.morus")
@@ -62,11 +134,11 @@ else
 	b64decode = b64.decode	
 	local devrandom = io.open("/dev/urandom", "r")
 	if devrandom then
-		newnonce = function() return devrandom:read(noncelen) end
+		newnonce = function() return devrandom:read(moe.noncelen) end
 		moe.noncegen = "/dev/urandom"
 	else
 		newnonce = function() 
-			return hash(os.time()..os.clock(), noncelen)
+			return hash(os.time()..os.clock(), moe.noncelen)
 			end
 		moe.noncegen = "time-based"
 	end
@@ -94,8 +166,8 @@ function moe.decrypt(k, c, armor)
 		c, msg = b64decode(c)
 		if not c then return nil, msg end
 	end
-	local n = c:sub(1, noncelen)
-	c = c:sub(noncelen+1)
+	local n = c:sub(1, moe.noncelen)
+	c = c:sub(moe.noncelen+1)
 	local p
 	p, msg = decrypt(k, n, c)
 	if not p then return nil, msg end
@@ -114,12 +186,12 @@ function moe.stok(s)
 	local slen = #s
 	if slen < minlen then s = s:rep(math.ceil(minlen/slen)) end
 	-- uniformize bits
-	s = hash(s, keylen)
+	s = hash(s, moe.keylen)
 	return s
 end
 
 function moe.getnonce(c)
-	return c:sub(1, noncelen)
+	return c:sub(1, moe.noncelen)
 end
 
 ------------------------------------------------------------------------
@@ -128,7 +200,7 @@ end
 -- file encryption is performed one block at a time.
 
 local csize = 1048576 -- encrypted block size = 1 MByte
-local psize = csize - noncelen - maclen -- plain block size
+local psize = csize - moe.noncelen - moe.maclen -- plain block size
 
 function moe.fhencrypt(k, fhin, fhout, finlen)
 	-- encrypt from and to a file handle

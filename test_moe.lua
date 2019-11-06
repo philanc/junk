@@ -5,7 +5,9 @@
 
 local moe = require "moe"
 
-require"hei"
+print("crypto and nonce generation: ", moe.use())
+
+local he = require"he"
 --~ he.pp(moe)
 
 local k = ('k'):rep(32)
@@ -13,6 +15,9 @@ local p, p2, c, msg, clen, x, y, z
 p = "hello"
 c = moe.encrypt(k, p, true)
 --~ print("#c, c:", #c, c)
+print(moe.use("plc"))
+print("crypto and nonce generation: ", moe.use())
+
 assert(moe.decrypt(k, c, true) == p)
 --
 -- file names
