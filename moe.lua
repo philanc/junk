@@ -1,5 +1,13 @@
+-- Copyright (c) 2019  Phil Leblanc  -- see LICENSE file
 
--- moe - morus-based encryption (here, moe is not related to anime :-)
+------------------------------------------------------------------------
+--[[ 
+
+=== moe - morus-based encryption 
+
+(here, moe is not related to anime :-)
+
+]]
 
 ------------------------------------------------------------------------
 
@@ -11,8 +19,6 @@ local insert, concat = table.insert, table.concat
 local moe = {} -- the moe module table
 
 moe.VERSION = "0.1"
-
-local bsize = 1048576 -- blocksize = 1 MByte
 
 local noncelen = 16
 local maclen = 16
@@ -66,19 +72,6 @@ else
 	end
 end
 
-function moe.stok(s)
-	-- take a key string and generate a key
-	-- (can be used for example to generate keys from a keyfile;
-	-- this is _not_ a password key derivation function)
-	local minlen = 1024
-	-- ensure s is at least minlen bytes
-	local slen = #s
-	if slen < minlen then s = s:rep(math.ceil(minlen/slen)) end
-	-- uniformize bits
-	s = hash(s, keylen)
-	return s
-end
-
 -- string encryption
 
 function moe.encrypt(k, p, armor, n)
@@ -109,9 +102,103 @@ function moe.decrypt(k, c, armor)
 	return p
 end
 
+------------------------------------------------------------------------
+-- utility functions
+
+function moe.stok(s)
+	-- take a key string and generate a key ("string-to-key")
+	-- (can be used for example to generate keys from a keyfile;
+	-- this is _not_ a password key derivation function)
+	local minlen = 1024
+	-- ensure s is at least minlen bytes
+	local slen = #s
+	if slen < minlen then s = s:rep(math.ceil(minlen/slen)) end
+	-- uniformize bits
+	s = hash(s, keylen)
+	return s
+end
+
 function moe.getnonce(c)
 	return c:sub(1, noncelen)
 end
 
+------------------------------------------------------------------------
+-- file encryption
+
+-- file encryption is performed one block at a time.
+
+local csize = 1048576 -- encrypted block size = 1 MByte
+local psize = csize - noncelen - maclen -- plain block size
+
+function moe.fhencrypt(k, fhin, fhout, finlen)
+	-- encrypt from and to a file handle
+	-- fhin is a file handle to an open file (mode=r).
+	-- fhout is a file handle to an open file (mode=w).
+	-- input and output files are _not_ closed by this function.
+	-- finlen is the input length (the function attempts to read
+	-- up to finlen bytes). It is optional. Default is to read up to 
+	-- the end of file.
+	-- return the total number of bytes written to fhout, or 
+	-- nil, errmsg in case of error.
+	local p, c, r, msg, cnt
+	local rcnt = 0 -- total read byte counter
+	local wcnt = 0 -- total write byte counter
+	local min = math.min
+	if io.type(fhin) ~= "file" then 
+		return nil, "invalid input file handle"
+	end
+	if io.type(fhout) ~= "file" then 
+		return nil, "invalid output file handle"
+	end
+	finlen = finlen or math.maxinteger
+	while true do
+		cnt = min(psize, finlen - rcnt)
+		p, msg = fhin:read(cnt)
+		if not p then --eof
+			return wcnt
+		end
+		rcnt = rcnt + #p
+		c = moe.encrypt(k, p)
+		r, msg = fhout:write(c)
+		if not r then return nil, "output error: " .. msg end
+		wcnt = wcnt + #c
+	end
+end --fhencrypt()
+
+function moe.fhdecrypt(k, fhin, fhout, finlen)
+	-- decrypt from and to a file handle
+	-- fhin is a file handle to an open file (mode=r).
+	-- fhout is a file handle to an open file (mode=w).
+	-- input and output files are _not_ closed by this function.
+	-- finlen is the input length (the function attempts to read
+	-- up to finlen bytes). It is optional. Default is to read up to 
+	-- the end of file.
+	-- return the total number of bytes written to fhout, or 
+	-- nil, errmsg in case of error.
+	local p, c, r, msg, cnt
+	local rcnt = 0 -- total read byte counter
+	local wcnt = 0 -- total write byte counter
+	local min = math.min
+	if io.type(fhin) ~= "file" then 
+		return nil, "invalid input file handle"
+	end
+	if io.type(fhout) ~= "file" then 
+		return nil, "invalid output file handle"
+	end
+	finlen = finlen or math.maxinteger
+	while true do
+		cnt = min(csize, finlen - rcnt)
+		c, msg = fhin:read(cnt)
+		if not c then --eof
+			return wcnt
+		end
+		rcnt = rcnt + #c
+		p, msg = moe.decrypt(k, c)
+		if not p then return nil, "decrypt error: " .. msg end
+		r, msg = fhout:write(p)
+		if not r then return nil, "output error: " .. msg end
+		wcnt = wcnt + #p
+	end
+end --fhdecrypt()
 ------------------------------------------------------------------------
 return moe
