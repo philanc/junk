@@ -12,6 +12,8 @@ encrypt()     encrypt a string; optionnally base64-encode the result
 decrypt()     decrypt a string, optionnaly base64-encoded
 fhencrypt()   encrypt from/to open file handles
 fhdecrypt()   decrypt from/to open file handles
+fileencrypt() encrypt from/to a file
+filedecrypt() decrypt from/to a file
 getnonce()    extract the nonce from an encrypted string
 stok()        generate a key from a keyfile content
 use()         select a crypto implementation or return the current one
