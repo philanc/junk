@@ -272,5 +272,44 @@ function moe.fhdecrypt(k, fhin, fhout, finlen)
 		wcnt = wcnt + #p
 	end
 end --fhdecrypt()
+
+function moe.fileencrypt(k, pfname, cfname)
+	local pfh, cfh, r, msg
+	pfh, msg = io.open(pfname)
+	if not pfh then 
+		return nil, "input error: " .. (msg or "") 
+	end
+	cfh, msg = io.open(cfname, "w")
+	if not cfh then 
+		pfh:close()
+		return nil, "output error: " .. (msg or "") 
+	end
+	r, msg = moe.fhencrypt(k, pfh, cfh)
+	pfh:close()
+	cfh:close()
+	return r, msg
+end--fileencrypt
+
+function moe.filedecrypt(k, cfname, pfname)
+	local pfh, cfh, r, msg
+	cfh, msg = io.open(cfname)
+	if not cfh then 
+		return nil, "input error: " .. (msg or "") 
+	end
+	pfh, msg = io.open(pfname, "w")
+	if not pfh then 
+		cfh:close()
+		return nil, "output error: " .. (msg or "") 
+	end
+	r, msg = moe.fhdecrypt(k, cfh, pfh)
+	pfh:close()
+	cfh:close()
+	if not r then
+		os.remove(pfname)
+	end
+	return r, msg
+end--filedecrypt
+
+
 ------------------------------------------------------------------------
 return moe

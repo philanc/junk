@@ -25,6 +25,7 @@ local fbase = "/tmp/" .. os.getenv("USER") .. "-moetest"
 local fnp = fbase .. ".p"
 local fnc = fbase .. ".c"
 local fnp2 = fbase .. ".p2"
+local fnp3 = fbase .. ".p3"
 --
 x=1200000
 p = ("a"):rep(x)
@@ -43,7 +44,13 @@ assert(z and (z == x), msg)
 fhi:close()
 fho:close()
 assert(he.fget(fnp2) == he.fget(fnp))
+--
+assert(moe.fileencrypt(k, fnp, fnc))
+assert(moe.filedecrypt(k, fnc, fnp3))
+assert(he.fget(fnp3) == he.fget(fnp))
+
 os.remove(fnp)
 os.remove(fnp2)
+os.remove(fnp3)
 os.remove(fnc)
 print("test_moe:  ok")
