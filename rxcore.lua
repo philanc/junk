@@ -109,25 +109,25 @@ end
 ------------------------------------------------------------------------
 -- client-side functions
 
-local function wrap_req(conf, code, arg, qdata)
+local function wrap_req(key, code, arg, qdata)
 	local reqid = new_reqid()
 	local q = spack("<I4I4I8", code, #qdata, arg)
-	local eqhdr = reqid .. encrypt(conf.key, reqid, q, 0) --ctr=0
-	local eqdata = encrypt(conf.key, reqid, qdata, 1) --ctr=1
+	local eqhdr = reqid .. encrypt(key, reqid, q, 0) --ctr=0
+	local eqdata = encrypt(key, reqid, qdata, 1) --ctr=1
 	return reqid, eqhdr, eqdata
 end
 
-local function unwrap_rhdr(conf, erhdr)
+local function unwrap_rhdr(key, erhdr)
 	-- 
 	local reqid, time = get_reqid(erhdr)
-	local rhdr = decrypt(conf.key, reqid, erhdr:sub(NONCELEN+1), 2) -- ctr=2
+	local rhdr = decrypt(key, reqid, erhdr:sub(NONCELEN+1), 2) -- ctr=2
 	if not rhdr then return nil, "rhdr decrypt error" end
 	local code, len, arg = sunpack("<I4I4I8", rhdr)
 	return reqid, code, len, arg
 end
 
-local function unwrap_rdata(conf, reqid, erdata)
-	local rdata = decrypt(conf.key, reqid, erdata, 3) -- ctr=3
+local function unwrap_rdata(key, reqid, erdata)
+	local rdata = decrypt(key, reqid, erdata, 3) -- ctr=3
 	if not rdata then return nil, "rdata decrypt error" end
 	return rdata
 end
@@ -135,25 +135,25 @@ end
 ------------------------------------------------------------------------
 -- server-side functions
 
-local function unwrap_qhdr(conf, eqhdr)
+local function unwrap_qhdr(key, eqhdr)
 	-- 
 	local reqid, time = get_reqid(eqhdr)
-	local qhdr = decrypt(conf.key, reqid, eqhdr:sub(NONCELEN+1), 0) -- ctr=0
+	local qhdr = decrypt(key, reqid, eqhdr:sub(NONCELEN+1), 0) -- ctr=0
 	if not qhdr then return nil, "qhdr decrypt error" end
 	local code, len, arg = sunpack("<I4I4I8", qhdr)
 	return reqid, code, len, arg
 end
 
-local function unwrap_qdata(conf, reqid, eqdata)
-	local qdata = decrypt(conf.key, reqid, eqdata, 1) -- ctr=1
+local function unwrap_qdata(key, reqid, eqdata)
+	local qdata = decrypt(key, reqid, eqdata, 1) -- ctr=1
 	if not qdata then return nil, "qdata decrypt error" end
 	return qdata
 end
 
-local function wrap_resp(conf, reqid, code, arg, rdata)
+local function wrap_resp(key, reqid, code, arg, rdata)
 	local r = spack("<I4I4I8", code, #rdata, arg)
-	local eqhdr = reqid .. encrypt(conf.key, reqid, q, 0) --ctr=0
-	local eqdata = encrypt(conf.key, reqid, qdata, 1) --ctr=1
+	local eqhdr = reqid .. encrypt(key, reqid, q, 0) --ctr=0
+	local eqdata = encrypt(key, reqid, qdata, 1) --ctr=1
 	return reqid, eqhdr, eqdata
 end
 
