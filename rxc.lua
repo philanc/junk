@@ -36,46 +36,49 @@ end
 
 local rxcore = require "rxcore"
 
-	
+
+
 
 ------------------------------------------------------------------------
 -- client functions
 
-local function connect(ctx)
-	ctx.rawaddr = ctx.rawaddr 
-		or hesock.make_ipv4_sockaddr(ctx.addr, ctx.port)
-	ctx.state = "connect"
-	ctx.server = assert(hesock.connect(ctx.rawaddr))
-	return true
+
+
+local function connect(server)
+	local req = {}
+	req.sockaddr = server.sockaddr 
+		or hesock.make_ipv4_sockaddr(server.addr, server.port)
+	req.state = "connect"
+	req.sso = assert(hesock.connect(req.sockaddr))
+	req.key = assert(server.key and #server.key == rxcore.KEYLEN,
+			"server key invalid or empty")
+	return req
 end
 	
-local function send_request(ctx, cmd, data)
-	local ehdr, ecmd, edata = rxcore.encrypt_req(ctx, cmd, data)
-	ctx.state = "send req hdr"
-	assert(ctx.server:write(ehdr))
-	if ecmd then 
-		ctx.state = "send req cmd"
-		assert(ctx.server:write(ecmd))
-	end
-	if edata then 
-		ctx.state = "send req data"
-		assert(ctx.server:write(edata)) 
+local function send_request(req, code, arg, data)
+	local reqid, eqhdr, eqdata = rxcore.wrap_req(req.key, code, arg, data)
+	req.reqid = reqid
+	req.state = "send req hdr"
+	assert(req.sso:write(eqhdr))
+	if eqdata then 
+		req.state = "send req data"
+		assert(req.sso:write(eqdata)) 
 	end
 	return true
 end
 
-local function read_response(ctx)
-	ctx.state = "read resp hdr"
-	local ehdr = assert(ctx.server:read(rxcore.ER_HDRLEN))
-	assert(#ehdr == rxcore.ER_HDRLEN, "invalid header")
-	local status, resplen = rxcore.decrypt_resphdr(ctx, ehdr)
-	local resp = ""
-	if resplen > 0 then
-		ctx.state = "read resp"
-		resp = assert(rxcore.decrypt_resp(ctx, 
-			assert(ctx.server:read(resplen + rxcore.MACLEN))))
+local function read_response(req)
+	req.state = "read resp hdr"
+	local eqhdr = assert(req.sso:read(rxcore.HDRLEN))
+	assert(#eqhdr == rxcore.HDRLEN, "invalid header")
+	local reqid, len, code, arg = assert(rxcore.unwrap_rhdr(req.key, erhdr))
+	local erdata, rdata
+	if len > 0 then
+		req.state = "read rdata" 
+		erdata = assert(req.sso:read(len))
+		rdata = assert(unwrap_rdata(req.key, reqid, erdata)
 	end
-	return status, resp
+	return code, arg, rdata
 end
 
 ------------------------------------------------------------------------
@@ -84,39 +87,32 @@ end
 local rxc = {}
 
 
-function rxc.request_ctx(ctx, cmd, data)
-	-- send a request with a pre-initialized context and read response
-	-- allows to test specific params (reqtime, nonce, ...)
-	-- return status, resp or raise an error
-	connect(ctx)
-	send_request(ctx, cmd, data)
-	return read_response(ctx)
-end --request_ctx()
+function rxc.request_do(server, code, arg, data)
+	-- send a request and get a response
+	-- return rcode, rarg, rdata or raise an error
+	local req = connect(server)
+	send_request(req, code, arg, data)
+	return read_response(req)
+end --request_req()
 
-function rxc.request(rxs, cmd, data)
+function rxc.request(server, code, arg, data)
 	-- send a request and read a response
-	-- rxs is the server object
-	local ctx = { 
-		smk = rxs.smk,
-		addr = rxs.addr,
-		port = rxs.port,
-		debug = rxs.debug,
-	}
+	local req = connect(server)
 	local ok, status, resp
-	if ctx.debug then 
-		ok, status, resp = xpcall(rxc.request_ctx, 
-			traceback, ctx, cmd, data)
+	if req.debug then 
+		ok, status, resp = xpcall(rxc.request_req, 
+			traceback, req, cmd, data)
 	else
-		ok, status, resp = pcall(rxc.request_ctx, ctx, cmd, data)
+		ok, status, resp = pcall(rxc.request_req, req, cmd, data)
 	end
 	if not ok then 
 		-- status is the error message
 		resp = tostring(rxc.state) .. ":: " .. status
 		status = nil
 	end
---~ 	print(ctx)
-	if ctx.server then 
-		ctx.server:close()
+--~ 	print(req)
+	if req.sso then 
+		req.sso:close()
 	end
 	return status, resp
 end --request()
