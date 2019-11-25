@@ -55,13 +55,10 @@ naming convention:
 	'q' query/request
 	'r' response
 	'e' encrypted
-]]
 
 ]]
-
 
 local VERSION = "0.6"
-
 
 
 ------------------------------------------------------------------------
@@ -188,7 +185,7 @@ end
 local rxcore = {
 	new_reqid = new_reqid,     -- () => reqid
 	get_nonce = get_nonce,     -- (ehdr|edata) => reqid
-	make_nonce = make_nonce    -- (reqid, ctr) => nonce
+	make_nonce = make_nonce,    -- (reqid, ctr) => nonce
 	wrap_hdr = wrap_hdr,       -- (key, reqid, ctr, arg, len) => ehdr
 	wrap_data = wrap_data,     -- (key, reqid, ctr, data) => edata
 	unwrap_hdr = unwrap_hdr,   -- (key, ehdr) => reqid, len, arg
