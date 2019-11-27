@@ -56,7 +56,7 @@ local function connect(server)
 end
 	
 local function send_request(req, code, arg, data)
-	local reqid, eqhdr, eqdata = rxcore.wrap_req(req.key, code, arg, data)
+	local reqid, eqhdr, eqdata = rxcore.wrap_req(req.key, arg, data)
 	req.reqid = reqid
 	req.state = "send req hdr"
 	assert(req.sso:write(eqhdr))
