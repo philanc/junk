@@ -69,7 +69,7 @@ function rxc.request(server, code, arg, data)
 	
 	--
 	-- send header
-	r, eno = sock.write(sso, nonce + eqhdr)
+	r, eno = sock.write(sso, eqhdr)
 	if not r then msg = "send header"; goto ioerror end
 	-- send data if any
 	if eqdata then 

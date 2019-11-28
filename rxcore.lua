@@ -77,8 +77,8 @@ local VERSION = "0.7"
 
 
 ------------------------------------------------------------------------
--- tmp path adjustment
-package.path = "../he/?.lua;" .. package.path
+--~ -- tmp path adjustment
+--~ package.path = "../he/?.lua;" .. package.path
 
 ------------------------------------------------------------------------
 -- imports and local definitions
@@ -102,7 +102,7 @@ end
 ------------------------------------------------------------------------
 -- encryption
 
-local hezen = require 'hezen'
+local hezen = require 'he.zen'
 
 
 local KEYLEN = 32
@@ -182,9 +182,11 @@ local function unwrap_data(key, reqid, ctr, edata)
 end
 
 local function wrap_req(key, code, arg, data)
+	-- return reqid, encrypted header, encrypted data (or nil if no data)
+	-- the encrypted header is prefixed with the nonce.
 	data = data or ""
 	arg = arg or 0
-	local requid = new_requid()
+	local reqid = new_reqid()
 	local ehdr, nonce = wrap_hdr(key, reqid, 0, code, arg, #data) -- ctr=0
 	ehdr = nonce .. ehdr
 	local edata
