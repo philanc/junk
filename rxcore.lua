@@ -109,19 +109,19 @@ local KEYLEN = 32
 local NONCELEN = 16
 local MACLEN = 16
 local HDRLEN = 32   	-- encrypted header length (nonce not included)
-			-- = #len(=4) + code(=4) + arg(=8) + mac(16)
+			-- = #data(=4) + code(=4) + arg(=8) + mac(16)
 
 -- here, should add crypto selection code (use plc if luazen not avail)
 
 local function encrypt(key, nonce, m)
 	-- encrypt m with key, nonce
-	-- return the encrypted message c prefixed with nonce
-	-- => #c = #nonce + #m + MACLEN
+	-- return the encrypted message c 
+	-- => #c = #m + MACLEN
 	return hezen.morus_encrypt(key, nonce, m)
 end
 
 local function decrypt(key, nonce, c)
-	-- return decrypted message, nonce or nil errmsg if MAC error
+	-- return decrypted message or nil errmsg if MAC error
 	return hezen.morus_decrypt(key, nonce, c)
 end
 
