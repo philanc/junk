@@ -5,6 +5,10 @@
 
 === rxcore - rxc/rxd common definitions
 
+v0.7
+	- same header for req and resp (32 bytes)
+	- the first header block is prefixed by a nonce.
+
 v0.6
 	- removed time-based key diversification
 	- same header for req and resp (48 bytes)
@@ -27,10 +31,7 @@ protocol elements
 	based on Morus but the algorithm can be swapped with 
 	any other authenticated encryption algo.
 
-	hdr	header (fixed size - encrypted: 48 bytes)
-		contains:
-		- nonce(16) :: reqid(15) .. ctr(1)
-		- reqid(15) :: time(4) .. rnd(11) - must be unique
+	hdr	header (fixed size - encrypted: 32 bytes)
 		- ctr(1)    :: small int(0..3) used to make distinct nonces
 			       for all encrypted elements
 		- len(4)    :: int32  - unencrypted data size
@@ -47,7 +48,11 @@ protocol elements
 	encrypted data block.
 	
 	encrypted header and data blocks end with a MAC(16). 
-	encrypted headers blocks also start with a nonce(16).
+	A nonce(16) is prefixed to the request encrypted header 
+
+	nonce structure:
+		- nonce(16) :: reqid(15) .. ctr(1)
+		- reqid(15) :: time(4) .. rnd(11) - must be unique
 	
 	The main part of the nonce is the request id ('reqid'). It is the 
 	same reqid that is used for the request and the response headers 
@@ -103,7 +108,8 @@ local hezen = require 'hezen'
 local KEYLEN = 32
 local NONCELEN = 16
 local MACLEN = 16
-local HDRLEN = 48   -- = nonce(16) + #len(=4) + code(=4) + arg(=8) + mac(16)
+local HDRLEN = 32   	-- encrypted header length (nonce not included)
+			-- = #len(=4) + code(=4) + arg(=8) + mac(16)
 
 -- here, should add crypto selection code (use plc if luazen not avail)
 
@@ -149,13 +155,13 @@ end
 local function wrap_hdr(key, reqid, ctr, code, arg, datalen)
 	local nonce = make_nonce(reqid, ctr)
 	local h = spack("<I4I4i8", datalen, code, arg)
-	local ehdr = nonce .. encrypt(key, nonce, h)
-	return ehdr
+	local ehdr = encrypt(key, nonce, h)
+	return ehdr, nonce
 end
 
-local function unwrap_hdr(key, ehdr)
-	local nonce, reqid, ctr = parse_nonce(ehdr)
-	local hdr, err = decrypt(key, nonce, ehdr:sub(NONCELEN+1))
+local function unwrap_hdr(key, reqid, ctr, ehdr)
+	local nonce = make_nonce(reqid, ctr)
+	local hdr, err = decrypt(key, nonce, ehdr)
 	if not hdr then return nil, "unwrap_header: " .. err end
 	local len, code, arg = sunpack("<I4I4i8", hdr)
 	return reqid, ctr, len, code, arg
@@ -170,7 +176,7 @@ end
 
 local function unwrap_data(key, reqid, ctr, edata)
 	local nonce = make_nonce(reqid, ctr)
-	local data, err = decrypt(key, nonce, data:sub(NONCELEN+1))
+	local data, err = decrypt(key, nonce, edata)
 	if not data then return nil, "unwrap_data: " .. err end
 	return data
 end
@@ -179,7 +185,8 @@ local function wrap_req(key, code, arg, data)
 	data = data or ""
 	arg = arg or 0
 	local requid = new_requid()
-	local ehdr = wrap_hdr(key, reqid, 0, code, arg, #data) -- ctr=0
+	local ehdr, nonce = wrap_hdr(key, reqid, 0, code, arg, #data) -- ctr=0
+	ehdr = nonce .. ehdr
 	local edata
 	if #data > 0 then
 		edata = wrap_data(key, reqid, 1, data) -- ctr=1
@@ -190,6 +197,7 @@ end
 local function wrap_resp(key, reqid, code, arg, data)
 	data = data or ""
 	local ehdr = wrap_hdr(key, reqid, 2, code, arg, #data) -- ctr=2
+	-- here, nonce is NOT prepended to ehdr
 	local edata
 	if #data > 0 then
 		edata = wrap_data(key, reqid, 3, data) -- ctr=3
@@ -197,6 +205,7 @@ local function wrap_resp(key, reqid, code, arg, data)
 	return ehdr, edata
 end
 
+-- 
 
 
 
