@@ -32,8 +32,7 @@ protocol elements
 	any other authenticated encryption algo.
 
 	hdr	header (fixed size - encrypted: 32 bytes)
-		- ctr(1)    :: small int(0..3) used to make distinct nonces
-			       for all encrypted elements
+
 		- len(4)    :: int32  - unencrypted data size
 		- code(4)   :: int32  - code and arg are request or 
 		- arg(8)    :: int64    response arguments interpreted 
@@ -53,6 +52,8 @@ protocol elements
 	nonce structure:
 		- nonce(16) :: reqid(15) .. ctr(1)
 		- reqid(15) :: time(4) .. rnd(11) - must be unique
+		- ctr(1)    :: small int(0..3) used to make distinct nonces
+			       for all encrypted elements
 	
 	The main part of the nonce is the request id ('reqid'). It is the 
 	same reqid that is used for the request and the response headers 
@@ -188,12 +189,11 @@ local function wrap_req(key, code, arg, data)
 	arg = arg or 0
 	local reqid = new_reqid()
 	local ehdr, nonce = wrap_hdr(key, reqid, 0, code, arg, #data) -- ctr=0
-	ehdr = nonce .. ehdr
 	local edata
 	if #data > 0 then
 		edata = wrap_data(key, reqid, 1, data) -- ctr=1
 	end
-	return reqid, ehdr, edata
+	return reqid, nonce, ehdr, edata
 end
 
 local function wrap_resp(key, reqid, code, arg, data)

@@ -52,10 +52,7 @@ function rxc.request(server, code, arg, data)
 	local sso, r, eno, msg
 	local len = #data
 	local key = server.key
-	local reqid, eqhdr, eqdata = rxcore.wrap_req(key, arg, data)
-	-- here
-	--   - eqhdr includes the nonce prefix: #eqhdr = NONCELEN + HDRLEN
-	--   - if data is empty, eqdata is nil.
+	local reqid, nonce, eqhdr, eqdata = rxcore.wrap_req(key, arg, data)
 	--
 	-- connect to server
 	local sockaddr = server.sockaddr 
@@ -68,8 +65,8 @@ function rxc.request(server, code, arg, data)
 	local rreqid, ctr, rlen, rcode, rarg, rdata
 	
 	--
-	-- send header
-	r, eno = sock.write(sso, eqhdr)
+	-- send nonce and header
+	r, eno = sock.write(sso, nonce .. eqhdr)
 	if not r then msg = "send header"; goto ioerror end
 	-- send data if any
 	if eqdata then 
