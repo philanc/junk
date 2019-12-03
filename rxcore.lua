@@ -140,9 +140,15 @@ local function get_nonce(eblock)
 	return nonce, reqid, ctr
 end
 	
-function make_nonce(reqid, ctr)
+local function make_nonce(reqid, ctr)
 	-- nonce = reqid(15) .. ctr(1)
 	return spack("c15I1", reqid, ctr)
+end
+
+local function parse_nonce(nonce)
+	local reqid, ctr = sunpack("c15I1", nonce)
+	local time = sunpack("<I4", nonce)
+	return reqid, time, ctr
 end
 
 local function new_reqid()
@@ -165,7 +171,7 @@ local function unwrap_hdr(key, reqid, ctr, ehdr)
 	local hdr, err = decrypt(key, nonce, ehdr)
 	if not hdr then return nil, "unwrap_header: " .. err end
 	local len, code, arg = sunpack("<I4I4i8", hdr)
-	return reqid, ctr, len, code, arg
+	return len, code, arg
 end
 
 local function wrap_data(key, reqid, ctr, data)
@@ -218,6 +224,7 @@ local rxcore = {
 	new_reqid = new_reqid,     -- () => rid
 	get_nonce = get_nonce,     -- (ehdr|edata) => rid
 	make_nonce = make_nonce,   -- (rid, ctr) => nonce
+	parse_nonce = parse_nonce, -- (nonce) => rid, time, ctr
 	wrap_hdr = wrap_hdr,       -- (k, rid, ctr, code, arg, len) => ehdr
 	wrap_data = wrap_data,     -- (k, rid, ctr, data) => edata
 	unwrap_hdr = unwrap_hdr,   -- (k, ehdr) => rid, ctr, len, code, arg

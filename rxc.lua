@@ -13,8 +13,8 @@
 
 --~ local he = require 'he'
 he = require 'he'  -- make he global for request chunks
-local hezen = require 'hezen'
-local hesock = require 'hesock'
+local hezen = require 'he.zen'
+local sock = require 'l5.sock'
 
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
@@ -56,7 +56,7 @@ function rxc.request(server, code, arg, data)
 	--
 	-- connect to server
 	local sockaddr = server.sockaddr 
-		or hesock.make_ipv4_sockaddr(server.addr, server.port)
+		or sock.make_ipv4_sockaddr(server.addr, server.port)
 	sso, eno = sock.connect(sockaddr)
 	if not sso then return nil, eno, "connect" end
 	

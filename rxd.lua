@@ -10,15 +10,15 @@
 
 ------------------------------------------------------------------------
 -- tmp path adjustment
-package.path = "../he/?.lua;" .. package.path
+--~ package.path = "../he/?.lua;" .. package.path
 
 ------------------------------------------------------------------------
 -- imports and local definitions
 
 --~ local he = require 'he'
 he = require 'he'  -- make he global for request chunks
-local hezen = require 'hezen'
-local hesock = require 'hesock'
+local hezen = require 'he.zen'
+local sock = require 'l5.sock'
 
 local traceback = require("debug").traceback
 
@@ -35,9 +35,8 @@ local function repr(x)
 end
 
 
-local function log(...)
---~ 	print(he.isodate():sub(10), ...)
-	print(he.isodate(), ...)
+local function log(fmt, ...)
+	print(he.isodate(), strf(fmt, ...))
 end
 
 
@@ -49,17 +48,21 @@ local rxcore = require "rxcore"
 
 
 -----------------------------------------------------------------------
--- the rx server object
--- make it global (so it can be used in conf chunks)
-rxd = {}
-rxd.handlers = {} -- handler table
+rxd = {  -- the rxd module
+	log = log,
+}
+-----------------------------------------------------------------------
+
+
+
+
 
 
 -----------------------------------------------------------------------
 -- server - ban system and anti-replay and other utilities
 
 
-local function check_not_banned(client_ip)
+local function check_not_banned(rxd, client_ip)
 	local r
 	r = rxd.whitelist[client_ip]
 	if r then 
@@ -121,41 +124,6 @@ local function time_is_valid(reqtime)
 	return math.abs(os.time() - reqtime) < rxd.max_time_drift
 end
 
-local function read_request(ctx)
-	local ehdr, cmdlen, datalen, ecmd, edata, cmd, data
-	ctx.state = "get req hdr"
-	ehdr = assert(ctx.client:read(rxcore.EC_HDRLEN))
-	assert(#ehdr == rxcore.EC_HDRLEN, "invalid header")
-	ctx.reqtime, ctx.nonce = rxcore.get_reqtime_nonce(ehdr)
-	assert(time_is_valid(ctx.reqtime), "invalid req time")
-	assert(not used_nonce(ctx.nonce), "already used nonce")
-	cmdlen, datalen = assert(rxcore.decrypt_reqhdr(ctx, ehdr))
-	-- here, req header is valid => client is genuine
-	ctx.state = "get req cmd"
-	ban_counter_reset(ctx.client_ip)
-	cmd, data = "", ""
-	if cmdlen > 0 then 
-		ecmd = assert(ctx.client:read(cmdlen + rxcore.MACLEN))
-		cmd = rxcore.decrypt_cmd(ctx, ecmd)
-	end
-	if datalen > 0 then 
-		edata = assert(ctx.client:read(datalen + rxcore.MACLEN))
-		data = rxcore.decrypt_data(ctx, edata)
-	end
-	return cmd, data
-end --read_request()
-
-local function send_response(ctx, status, resp)
-	local ehdr, eresp = rxcore.encrypt_resp(ctx, status, resp)
-	ctx.state = "send resp hdr"
-	assert(ctx.client:write(ehdr))
-	if eresp then 
-		ctx.state = "send resp"
-		assert(ctx.client:write(eresp))
-	end	
-	return true
-end --send_response()
-
 local function handle_cmd(ctx, cmd, data)
 	-- return status:int, resp:string
 	--
@@ -188,78 +156,134 @@ local function handle_cmd(ctx, cmd, data)
 end --handle_cmd
 
 local function try_serve_client(ctx)
-	local cmd, data = read_request(ctx)
-	local status, resp = handle_cmd(ctx, cmd, data)
-	send_response(ctx, status, resp)
 end
 
-local function serve_client(client)
-	--
-	-- get client info
-	local client_ip, client_port = hesock.getclientinfo(client, true)
-	-- prepare context
-	local ctx = { 
-		smk = rxd.smk,
-		debug = rxd.debug,
-		handlers = rxd.handlers,
-		client = client,
-		client_ip = client_ip,
-		client_port = client_port,
-	}
-	local ok, r, errmsg
-	if ctx.debug then 
-		ok, r, errmsg = xpcall(try_serve_client, traceback, ctx)
-	else
-		ok, r, errmsg = pcall(try_serve_client, ctx)
+local function serve_client(server, cso)
+	-- return false, exitcode to request the server loop to exit. 
+	--   the exitcode value can be use to ask the server to shudown 
+	--   or to restart.
+	
+	local csa = sock.getpeername(cso) -- get client sockaddr
+	local cip, cport = sock.sockaddr_ip_port(sa)
+	
+	-- test if the client is valid (not banned)
+	-- if not, drop the connection without any response
+	if client_is_banned(server, cip) then
+		sock.close(cso)
+		return true
 	end
-	if not ok then 
-		errmsg = tostring(ctx.state) .. ":: " .. tostring(r) .. ":"tostring(errmsg)
-		if ctx.state == "get req hdr" then
-			-- invalid header
-			ban_if_needed(ctx.client_ip)
-			rxd.log("REJECTED", ctx.client_ip, errmsg)
-		else
-			rxd.log("ABORTED", ctx.client_ip, errmsg)
+	
+	local r, eno, msg
+	local nonce, ehdr, edata, hdr, data
+	local reqid, time
+	local datalen, code, arg
+	local rcode, rarg, rdata
+	
+	-- read nonce
+	nonce, eno = sock.read(cso, rxcore.NONCELEN)
+	if not nonce then msg = "reading nonce"; goto cerror end
+	reqid, time = rxcore.parse_nonce(nonce)
+	
+	if is_reqid_reused(server, reqid)
+		eno = -1
+		msg = "reqid reused"
+		ban_if_needed(server, cip)
+
+	if not is_time_valid(time) then
+		eno = -1
+		msg = "invalid time"
+		ban_if_needed(server, cip)
+	end
+	
+	-- read req header
+	ehdr, eno = sock.read(cso, rxcore.HDRLEN)
+	if not ehdr then msg = "reading ehdr"; goto cerror end
+	
+	--unwrap req header (ctr=0)
+	datalen, code, arg = rxcore.unwrap_hdr(server.key, reqid, 0, ehdr)
+	if not datalen then 
+		msg = "header decrypt error"
+		ban_if_needed(server, cip)
+		eno = -1
+		goto cerror
+	else
+		-- header is valid (the header has been properly 
+		-- decrypted, so the client is assumed to be genuine.)
+		-- => reset the ban try counter for the client ip
+		ban_reset(server, cip)
+	end
+	
+	-- read data if needed
+	if datalen > 0 then 
+		edata, eno = sock.read(cso, datalen + rxcore.MACLEN)
+		if not edata then msg = "reading edata"; goto cerror end
+		-- unwrap data (ctr=1)
+		data, msg = unwrap_data(server.key, reqid, 1, edata)
+		if not data then
+			eno = -1
+			-- msg is set above
+			goto cerror
 		end
 	end
-	ctx.client:close()
-end
+	
+	-- handle the request
+	local handler = find_req_handler(server, code)
+	rcode, rarg, rdata = handler(reqid, code, arg, data)
+	
+	-- send the response
+	rhdr, rdata = rxcore.wrap_resp(server.key, reqid, rcode, rarg, rdata)
+	
+	r, eno = sock.write(cso, rhdr)
+	if not r then msg = "sending rhdr"; goto cerror end
+
+	if rdata then 
+		r, eno = sock.write(cso, rdata)
+		if not r then msg = "sending rdata"; goto cerror end
+	end
+	
+	do  -- this do block because return MUST be the last stmt of a block
+		return true 
+	end
+
+	::cerror::
+	sock.close(cso)
+	log(strf("client %s %d: errno: %d  (%s)", cip, cport, eno, msg)
+	return true
+
+end --serve_client()
 
 	
 
 ------------------------------------------------------------------------
 -- the server main loop
 
-function rxd.serve()
+function rxd.serve(server)
 	-- server main loop:
 	-- 	wait for a client
 	--	call serve_client() to process client request
 	--	rinse, repeat
-	local client, r, msg
-	init_ban_list()
-	init_used_nonce_list()
-	rxd.bind_rawaddr = rxd.bind_rawaddr or 
-		hesock.make_ipv4_sockaddr(rxd.bind_addr, rxd.port)
---~ 	print(111, rxd.bind_addr, rxd.port, repr(rxd.bind_rawaddr))
-	local server = assert(hesock.bind(rxd.bind_rawaddr))
-	rxd.log(strf("server bound to %s port %d", 
-		rxd.bind_addr, rxd.port))
---~ 	print("getserverinfo(server)", hesock.getserverinfo(server, true))
+	local cso, sso, r, eno, msg
+	init_ban_list(server)
+	init_used_nonce_list(server)
+	server.bind_sockaddr = server.bind_sockaddr or 
+		sock.make_ipv4_sockaddr(server.bind_addr, server.port)
+	sso, msg = sock.bind(server.bind_sockaddr))
+	rxd.log("server bound to %s port %d", rxd.bind_addr, rxd.port)
 	
-	while not rxd.exitcode do
---~ 		rxd.exitcode=11
-		client, msg = hesock.accept(server)
+	local r, exitcode
+	while not r do
+		cso, eno = sock.accept(server)
 		if not client then
-			rxd.log("rxd serve(): accept error", msg)
+			rxd.log("rxd.serve: accept error:", eno)
 		else
-			serve_client(client) 
+			r, exitcode = serve_client(server, cso) 
 		end
 	end--while
-	if client then hesock.close(client); client = nil end
-	-- TODO should be: 	close_all_clients(rxd)
-	local r, msg = hesock.close(server)
+	if cso then sock.close(cso); cso = nil end
+	-- TODO should be: 	close_all_clients(server)
+	local r, msg = sock.close(sso)
 	rxd.log("server closed", r, msg)
-	return rxd.exitcode
+	return exitcode
 end--server()
 
 
