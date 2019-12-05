@@ -5,6 +5,11 @@
 
 === rxcore - rxc/rxd common definitions
 
+v0.8
+	- same as v0.7 except code, arg are replaced with a rnd(12) string
+	- the same rnd is used for req and resp.
+	- the ban system is removed.
+	
 v0.7
 	- same header for req and resp (32 bytes)
 	- the first header block is prefixed by a nonce.
@@ -33,18 +38,9 @@ protocol elements
 
 	hdr	header (fixed size - encrypted: 32 bytes)
 
+		- rnd(12)   :: string - used to fuzz the header
 		- len(4)    :: int32  - unencrypted data size
-		- code(4)   :: int32  - code and arg are request or 
-		- arg(8)    :: int64    response arguments interpreted 
-		                        by req handler and client
 	
-	code and arg are interpreted by the application layers (client
-	and server request handler). The convention is to use 'code' 
-	as a request opcode or a response status code, and arg as an 
-	optional additional argument. In many cases the request 
-	or response data is really small (8 bytes or less). In these
-	cases, arg can be use and eliminate the need for an additional
-	encrypted data block.
 	
 	encrypted header and data blocks end with a MAC(16). 
 	A nonce(16) is prefixed to the request encrypted header 
@@ -74,7 +70,7 @@ naming convention:
 
 ]]
 
-local VERSION = "0.7"
+local VERSION = "0.8"
 
 
 ------------------------------------------------------------------------
@@ -110,7 +106,7 @@ local KEYLEN = 32
 local NONCELEN = 16
 local MACLEN = 16
 local HDRLEN = 32   	-- encrypted header length (nonce not included)
-			-- = #data(=4) + code(=4) + arg(=8) + mac(16)
+			-- = #rnd(=12) + #data(=4) + #mac(=16)
 
 -- here, should add crypto selection code (use plc if luazen not avail)
 
@@ -133,104 +129,90 @@ end
 ------------------------------------------------------------------------
 
 
-local function get_nonce(eblock)
-	-- extract nonce, reqid and time form an encrypted block
-	local nonce = sunpack("c16", eblock)
-	local reqid, ctr = sunpack("c15I1", nonce)
-	return nonce, reqid, ctr
-end
-	
-local function make_nonce(reqid, ctr)
-	-- nonce = reqid(15) .. ctr(1)
-	return spack("c15I1", reqid, ctr)
-end
-
-local function parse_nonce(nonce)
-	local reqid, ctr = sunpack("c15I1", nonce)
-	local time = sunpack("<I4", nonce)
-	return reqid, time, ctr
+local function make_noncelist(time, rnd)
+	-- create a list of four distinct nonces used to encrypt/decrypt 
+	-- the header and data blocks for the request and the response
+	local nl = {}
+	time = time or os.time()
+	rnd = rnd or randombytes(11)
+	for i = 1, 4 do
+		table.insert(nl, spack("<I4c11i1", time, rnd, i))
+	end
+	return nl
 end
 
-local function new_reqid()
-	local reqid = spack("<I4c11", os.time(), randombytes(11))
-	return reqid
+local function parse_nonce(n)
+	-- parse a nonce, extract the time, the random string 
+	-- and the counter 
+	local time, rnd, ctr = sunpack("<I4c11i1", n)
+	return time, rnd, ctr
 end
+
 
 ------------------------------------------------------------------------
 -- header and data encryption/decryption
 
-local function wrap_hdr(key, reqid, ctr, code, arg, datalen)
-	local nonce = make_nonce(reqid, ctr)
-	local h = spack("<I4I4i8", datalen, code, arg)
-	local ehdr = encrypt(key, nonce, h)
-	return ehdr, nonce
+local function wrap_hdr(key, nonce, datalen, rnd)
+	local hdr = spack("c12<i4", rnd, datalen)
+	local ehdr = encrypt(key, nonce, hdr)
+	return ehdr
 end
 
-local function unwrap_hdr(key, reqid, ctr, ehdr)
-	local nonce = make_nonce(reqid, ctr)
+local function unwrap_hdr(key, nonce, ehdr)
 	local hdr, err = decrypt(key, nonce, ehdr)
 	if not hdr then return nil, "unwrap_header: " .. err end
-	local len, code, arg = sunpack("<I4I4i8", hdr)
-	return len, code, arg
+	local rnd, len = sunpack("c12<i4", hdr)
+	return len, rnd
 end
 
-local function wrap_data(key, reqid, ctr, data)
-	local nonce = make_nonce(reqid, ctr)
-	-- edata is _not_ prefixed with the used nonce 
+local function wrap_data(key, nonce, data)
 	local edata = encrypt(key, nonce, data)
 	return edata
 end
 
-local function unwrap_data(key, reqid, ctr, edata)
-	local nonce = make_nonce(reqid, ctr)
+local function unwrap_data(key, nonce, edata)
 	local data, err = decrypt(key, nonce, edata)
 	if not data then return nil, "unwrap_data: " .. err end
 	return data
 end
 
-local function wrap_req(key, code, arg, data)
-	-- return reqid, encrypted header, encrypted data (or nil if no data)
-	-- the encrypted header is prefixed with the nonce.
+local function wrap_req(key, data)
+	-- return the encrypted header, the encrypted data, the list
+	-- of nonces for the request and the response, and the random 
+	-- string included in the headers
 	data = data or ""
-	arg = arg or 0
-	local reqid = new_reqid()
-	local ehdr, nonce = wrap_hdr(key, reqid, 0, code, arg, #data) -- ctr=0
-	local edata
-	if #data > 0 then
-		edata = wrap_data(key, reqid, 1, data) -- ctr=1
-	end
-	return reqid, nonce, ehdr, edata
+	local nl = make_noncelist()
+	local rnd = randombytes(12)
+	local ehdr = wrap_hdr(key, nl[1], #data, rnd)
+	local edata = wrap_data(key, nl[2], data)
+	return ehdr, edata, nl, rnd
 end
 
-local function wrap_resp(key, reqid, code, arg, data)
+local function wrap_resp(key, nl, data, rnd)
 	data = data or ""
-	local ehdr = wrap_hdr(key, reqid, 2, code, arg, #data) -- ctr=2
+	local ehdr = wrap_hdr(key, nl[3], #data, rnd)
 	-- here, nonce is NOT prepended to ehdr
-	local edata
-	if #data > 0 then
-		edata = wrap_data(key, reqid, 3, data) -- ctr=3
-	end
+	local edata = wrap_data(key, nl[4], data)
 	return ehdr, edata
 end
-
--- 
-
 
 
 ------------------------------------------------------------------------
 -- rxcore module
 
 local rxcore = {
+	make_noncelist = make_noncelist,  -- ([time]) => noncelist
+	parse_nonce = parse_nonce, -- (nonce) => time, rnd, ctr
 	new_reqid = new_reqid,     -- () => rid
 	get_nonce = get_nonce,     -- (ehdr|edata) => rid
 	make_nonce = make_nonce,   -- (rid, ctr) => nonce
 	parse_nonce = parse_nonce, -- (nonce) => rid, time, ctr
-	wrap_hdr = wrap_hdr,       -- (k, rid, ctr, code, arg, len) => ehdr
+	wrap_hdr = wrap_hdr,       -- (k, rid, ctr, len, rnd) => ehdr
 	wrap_data = wrap_data,     -- (k, rid, ctr, data) => edata
-	unwrap_hdr = unwrap_hdr,   -- (k, ehdr) => rid, ctr, len, code, arg
+	unwrap_hdr = unwrap_hdr,   -- (k, ehdr) => rid, ctr, len, rnd
 	unwrap_data = unwrap_data, -- (k, rid, ctr, edata) => data
-	wrap_req = wrap_req,       -- (k, code, arg, data) => rid, ehdr, edata
-	wrap_resp = wrap_resp,     -- (k, rid, code, arg, data) => ehdr, edata
+	wrap_req = wrap_req,       -- (k, data) => rid, ehdr, edata
+	wrap_resp = wrap_resp,     -- (k, rid, data) => ehdr, edata
 
 	HDRLEN = HDRLEN,
 	MACLEN = MACLEN,

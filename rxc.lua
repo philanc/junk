@@ -45,14 +45,13 @@ local rxcore = require "rxcore"
 local rxc = {}  -- the rxc module
 
 
-function rxc.request(server, code, arg, data)
-	-- return reqid, rcode, rarg, rdata or nil, eno, msg
+function rxc.request(server, data)
+	-- return rdata or nil, eno, msg
 	data = data or ""
-	arg = arg or 0
 	local sso, r, eno, msg
 	local len = #data
 	local key = server.key
-	local reqid, nonce, eqhdr, eqdata = rxcore.wrap_req(key, arg, data)
+	local ehdr, edata, nl, rnd = rxcore.wrap_req(key, data)
 	--
 	-- connect to server
 	local sockaddr = server.sockaddr 
@@ -62,38 +61,42 @@ function rxc.request(server, code, arg, data)
 	
 	-- declare local before goto to prevent
 	-- "jumps into the scope of local" error
-	local rreqid, ctr, rlen, rcode, rarg, rdata
+	local rlen, rdata, rrnd
 	
 	--
-	-- send nonce and header
-	r, eno = sock.write(sso, nonce .. eqhdr)
+	-- send 1st nonce and header
+	r, eno = sock.write(sso, nl[1] .. eqhdr)
 	if not r then msg = "send header"; goto ioerror end
-	-- send data if any
-	if eqdata then 
-		r, eno = sock.write(sso, eqdata)
-		if not r then msg = "send data"; goto ioerror end
-	end
+	-- send data
+	r, eno = sock.write(sso, eqdata)
+	if not r then msg = "send data"; goto ioerror end
 	-- recv response header
-	r, eno = sock.read(sso, rxcore.HDRLEN)
-	if not r then msg = "recv header"; goto ioerror end
-	rreqid, ctr, rlen, rcode, rarg = rxcore.unwrap_hdr(key, r)
-	if not rreqid then
-		eno = ctr
-		msg = rlen
+	ehdr, eno = sock.read(sso, rxcore.HDRLEN)
+	if not ehdr then msg = "recv header"; goto ioerror end
+	rlen, rrnd = rxcore.unwrap_hdr(key, nl[3], ehdr)
+	if not rlen then
+		eno = -1
+		msg = rrnd
 		goto ioerror
 	end
-	assert(ctr == 2 and rreqid == reqid, "invalid resp header")
-	--
-	-- recv resp data if any
-	if rlen > 0 then 
-		r, eno = sock.read(sso, rlen)
-		if not r then msg = "recv data"; goto ioerror end
-		rdata, eno = unwrap_data(key, reqid, 3, r)
-		if not rdata then msg = "unwrap rdata"; goto ioerror end
+	if rrnd ~= rnd then
+		eno = -2
+		msg = "req and resp headers not matching"
+		goto ioerror
+	end
+	
+	-- recv resp data
+	r, eno = sock.read(sso, rlen + rxcore.MACLEN)
+	if not r then msg = "recv data"; goto ioerror end
+	rdata, msg = unwrap_data(key, reqid, 3, r)
+	if not rdata then 
+		eno = -1
+		msg = "unwrap rdata"
+		goto ioerror 
 	end
 	
 	do -- this do block because return MUST be the last stmt of a block
-	return requid, rcode, rarg, rdata
+	return rdata
 	end
 	
 	::ioerror::

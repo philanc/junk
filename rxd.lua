@@ -50,7 +50,11 @@ local rxcore = require "rxcore"
 -----------------------------------------------------------------------
 rxd = {  -- the rxd module
 	log = log,
+	handlers = {},  -- the request handler table
+	server = {},	-- the server object
 }
+
+
 -----------------------------------------------------------------------
 
 
@@ -62,69 +66,70 @@ rxd = {  -- the rxd module
 -- server - ban system and anti-replay and other utilities
 
 
-local function check_not_banned(rxd, client_ip)
+function rxd.client_is_banned(server, client_ip)
 	local r
-	r = rxd.whitelist[client_ip]
-	if r then 
+	if server.whitelist[client_ip] then 
 		-- (whitelist overrides banned list)
-		return r 
+		return false
 	end
-	r = not rxd.banned_ip_tbl[client_ip]
-	if not r then
-		he.incr(rxd.banned_ip_tbl, client_ip)
-		if rxd.log_already_banned then 
-			log("already banned ip, tries", 
-			    client_ip,
-			    rxd.banned_ip_tbl[client_ip])
-		end
+	r = server.banned_ip_tbl[client_ip]
+	if not r then 
+		return false
 	end
-	return r
+	server.banned_ip_tbl[client_ip] = r + 1
+	-- here we ignore the rollover risk. 
+	-- assume it is safe with int64.
+	if server.log_already_banned then 
+		log(strf("already banned ip %s, tries: %d", 
+		    client_ip, r))
+	end
+	return true
 end
 	
-local function ban_if_needed(client_ip)
-	local tries = he.incr(rxd.ban_tries, client_ip)
-	if tries > rxd.ban_max_tries then
-		he.incr(rxd.banned_ip_tbl, client_ip)
+function rxd.ban_counter_incr(server, client_ip)
+	local tries = he.incr(server.ban_tries, client_ip)
+	if tries > server.ban_max_tries then
+		he.incr(server.banned_ip_tbl, client_ip)
 		rxd.log("BANNED", client_ip)
 	end
 end
 
-local function ban_counter_reset(client_ip)
+function rxd.ban_counter_reset(server, client_ip)
 	-- clear the try-counter (after a valid request)
-	rxd.ban_tries[client_ip] = nil
+	server.ban_tries[client_ip] = nil
 	-- auto whitelist
-	rxd.whitelist[client_ip] = true
+	server.whitelist[client_ip] = true
 end
 
-local function init_ban_list()
+function rxd.init_ban_list(server)
 	-- ATM, start with empty lists
-	rxd.ban_tries = {}
-	rxd.banned_ip_tbl = {}
-	rxd.whitelist = {}
+	server.ban_tries = {}
+	server.banned_ip_tbl = {}
+	server.whitelist = {}
 end
 	
-local function init_used_nonce_list()
+function rxd.init_used_reqid_list(server)
 	-- ATM, start with empty list
-	rxd.nonce_tbl = {}
+	server.reqid_tbl = {}
 end
 	
-local function used_nonce(nonce)
-	-- determine if nonce has recently been used
+function rxd.is_reqid_used(server, reqid)
+	-- determine if reqid has recently been used
 	-- then set it to used
-	local  r = rxd.nonce_tbl[nonce]
-	rxd.nonce_tbl[nonce] = true
+	local  r = server.reqid_tbl[reqid]
+	server.reqid_tbl[reqid] = true
 	return r
 end
 
 
--- max difference between request time and server time
--- defined in server rxd.max_time_drift
+-- max valid difference between request time and server time
+-- defined in server server.max_time_drift
 --
-local function time_is_valid(reqtime)
-	return math.abs(os.time() - reqtime) < rxd.max_time_drift
+function rxd.is_time_valid(server, reqtime)
+	return math.abs(os.time() - reqtime) < server.max_time_drift
 end
 
-local function handle_cmd(ctx, cmd, data)
+local function handle_cmd(server, cmd, data)
 	-- return status:int, resp:string
 	--
 --~ 	he.pp(ctx)
@@ -155,7 +160,18 @@ local function handle_cmd(ctx, cmd, data)
 	return handler(ctx, cmd, data)
 end --handle_cmd
 
-local function try_serve_client(ctx)
+function rxd.handle_req(reqid, code, arg, data)
+	-- return rcode, rarg, rdata
+	local rcode, rarg, rdata
+	local handler = rxd.handlers[code]
+	if handler then 
+		rcode, rarg, rdata = handler(reqid, code, arg, data)
+		rarg = rarg or 0
+		rcode = rcode or -2
+		return rcode, rarg, rdata
+	else
+		return -1, 0, nil
+	end
 end
 
 local function serve_client(server, cso)
@@ -164,11 +180,11 @@ local function serve_client(server, cso)
 	--   or to restart.
 	
 	local csa = sock.getpeername(cso) -- get client sockaddr
-	local cip, cport = sock.sockaddr_ip_port(sa)
+	local cip, cport = sock.sockaddr_ip_port(csa)
 	
 	-- test if the client is valid (not banned)
 	-- if not, drop the connection without any response
-	if client_is_banned(server, cip) then
+	if rxd.client_is_banned(server, cip) then
 		sock.close(cso)
 		return true
 	end
@@ -177,22 +193,23 @@ local function serve_client(server, cso)
 	local nonce, ehdr, edata, hdr, data
 	local reqid, time
 	local datalen, code, arg
-	local rcode, rarg, rdata
+	local handler, rcode, rarg, rdata
 	
 	-- read nonce
 	nonce, eno = sock.read(cso, rxcore.NONCELEN)
 	if not nonce then msg = "reading nonce"; goto cerror end
 	reqid, time = rxcore.parse_nonce(nonce)
 	
-	if is_reqid_reused(server, reqid)
+	if rxd.is_reqid_used(server, reqid) then 
 		eno = -1
 		msg = "reqid reused"
-		ban_if_needed(server, cip)
+		rxd.ban_counter_incr(server, cip)
+	end
 
-	if not is_time_valid(time) then
+	if not rxd.is_time_valid(time) then
 		eno = -1
 		msg = "invalid time"
-		ban_if_needed(server, cip)
+		rxd.ban_counter_incr(server, cip)
 	end
 	
 	-- read req header
@@ -203,14 +220,14 @@ local function serve_client(server, cso)
 	datalen, code, arg = rxcore.unwrap_hdr(server.key, reqid, 0, ehdr)
 	if not datalen then 
 		msg = "header decrypt error"
-		ban_if_needed(server, cip)
+		rxd.ban_counter_incr(server, cip)
 		eno = -1
 		goto cerror
 	else
 		-- header is valid (the header has been properly 
 		-- decrypted, so the client is assumed to be genuine.)
 		-- => reset the ban try counter for the client ip
-		ban_reset(server, cip)
+		rxd.ban_counter_reset(server, cip)
 	end
 	
 	-- read data if needed
@@ -227,8 +244,7 @@ local function serve_client(server, cso)
 	end
 	
 	-- handle the request
-	local handler = find_req_handler(server, code)
-	rcode, rarg, rdata = handler(reqid, code, arg, data)
+	rcode, rarg, rdata = rxd.handle_req(reqid, code, arg, data)
 	
 	-- send the response
 	rhdr, rdata = rxcore.wrap_resp(server.key, reqid, rcode, rarg, rdata)
@@ -247,12 +263,10 @@ local function serve_client(server, cso)
 
 	::cerror::
 	sock.close(cso)
-	log(strf("client %s %d: errno: %d  (%s)", cip, cport, eno, msg)
+	log(strf("client %s %d: errno: %d  (%s)", cip, cport, eno, msg))
 	return true
 
 end --serve_client()
-
-	
 
 ------------------------------------------------------------------------
 -- the server main loop
@@ -263,17 +277,18 @@ function rxd.serve(server)
 	--	call serve_client() to process client request
 	--	rinse, repeat
 	local cso, sso, r, eno, msg
+	server = server or rxd.server
 	init_ban_list(server)
-	init_used_nonce_list(server)
+	init_used_reqid_list(server)
 	server.bind_sockaddr = server.bind_sockaddr or 
 		sock.make_ipv4_sockaddr(server.bind_addr, server.port)
-	sso, msg = sock.bind(server.bind_sockaddr))
-	rxd.log("server bound to %s port %d", rxd.bind_addr, rxd.port)
+	sso, msg = sock.bind(server.bind_sockaddr)
+	rxd.log("server bound to %s port %d", server.bind_addr, server.port)
 	
 	local r, exitcode
 	while not r do
 		cso, eno = sock.accept(server)
-		if not client then
+		if not cso then
 			rxd.log("rxd.serve: accept error:", eno)
 		else
 			r, exitcode = serve_client(server, cso) 
@@ -284,7 +299,7 @@ function rxd.serve(server)
 	local r, msg = sock.close(sso)
 	rxd.log("server closed", r, msg)
 	return exitcode
-end--server()
+end--serve()
 
 
 ------------------------------------------------------------------------
@@ -357,7 +372,7 @@ function rxd.handlers.sh(ctx, cmd, data)
 		r, exitcode = he.shell(cmd)
 		return exitcode, r
 	end
-	local tmpdir = rxd.tmpdir or '.'
+	local tmpdir = server.tmpdir or '.'
 	local ifn = strf("%s/%s.in", tmpdir, nx)
 	local r, msg = he.fput(ifn, data)
 	if not r then
@@ -379,27 +394,28 @@ end --rxd.handlers.sh
 rxd.log = log
 
 -- set default server parameters
-rxd.max_time_drift = 300 -- max secs between client and server time
-rxd.ban_max_tries = 3  -- number of tries before being banned
-rxd.log_rejected = true 
-rxd.log_aborted = true
-rxd.debug = true
-rxd.log_already_banned = true
-rxd.tmpdir = os.getenv"/tmp" or "/tmp"
+rxd.server.max_time_drift = 300 -- max secs between client and server time
+rxd.server.ban_max_tries = 3  -- number of tries before being banned
+rxd.server.log_rejected = true 
+rxd.server.log_aborted = true
+rxd.server.debug = true
+rxd.server.log_already_banned = true
+rxd.server.tmpdir = os.getenv"$TMP" or "/tmp"
 
 -- load config
 local conf = require "rxconf"
 
--- copy conf values in rxd
-for k,v in pairs(conf) do rxd[k] = v end
+-- copy conf values in server
+for k,v in pairs(conf) do rxd.server[k] = v end
+conf = nil -- conf is no longer needed
 
 -- run the server
-os.exit(rxd.serve())
+-- os.exit(rxd.serve())
 
 -- serve() return value can be used by a wrapping script to either
 -- stop or restart the server. convention is to restart server if 
 -- exitcode is 0.
 
---~ return rxd
+return rxd
 
 
