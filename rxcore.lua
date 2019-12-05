@@ -218,6 +218,9 @@ local rxcore = {
 	HDRLEN = HDRLEN,
 	MACLEN = MACLEN,
 	NONCELEN = NONCELEN,
+	
+	SHUTDOWN = 0,
+	RESTART = 1,
 
 	VERSION = VERSION,
 }

@@ -96,7 +96,16 @@ function rxd.is_time_valid(server, reqtime)
 	return math.abs(os.time() - reqtime) < server.max_time_drift
 end
 
-	
+
+local function rerr(msg, ctx, rt)
+	-- return a rdata with an error msg 
+	-- ctx is an additional message to give the error context
+	rt = rt or {}
+	ctx = ctx or ""
+	rt.ok = false
+	rt.errmsg = strf("%s: %s", ctx, rt)
+	return hpack(rt)
+end
 
 function rxd.handle_req(data)
 	-- return rdata
@@ -108,6 +117,8 @@ function rxd.handle_req(data)
 	if type(dt) == "string" then 
 		return strf("rxd time: %s  echo: %s", he.isodate(), dt)
 	end
+	if type(dt) ~= "table" then return rerr("invalid data content", "handle_req") end
+	-- here 
 	if dt.lua then
 		-- execute lua cmd
 	elseif dt.sh then
