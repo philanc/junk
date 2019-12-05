@@ -128,16 +128,16 @@ local function serve_client(server, cso)
 	
 	local r, eno, msg
 	local nonce, ehdr, edata, hdr, data
-	local nonce, reqtime, noncernd, ctr, nonces
-	local datalen, rnd
+	local nonce, reqtime, rnd, ctr, nonces
+	local datalen
 	local handler, rcode, rarg, rdata
 	
 	-- read nonce
 	nonce, eno = sock.read(cso, rxcore.NONCELEN)
 	if not nonce then msg = "reading nonce"; goto cerror end
-	reqtime, noncernd, ctr = rxcore.parse_nonce(nonce)
+	reqtime, rnd, ctr = rxcore.parse_nonce(nonce)
 ppp'got nonce'
-	nonces = rxcore.make_noncelist(time, noncernd)
+	nonces = rxcore.make_noncelist(time, rnd)
 	nonce = nonces[1] 	-- << this is on purpose:
 			-- to prevent an attacker to bypass anti-replay
 			-- with an initial nonce with ctr > 4
@@ -161,7 +161,7 @@ ppp'get hdr'
 	if not ehdr then msg = "reading ehdr"; goto cerror end
 ppp("#ehdr", #ehdr)
 	--unwrap req header 
-	datalen, rnd = rxcore.unwrap_hdr(server.key, nonces[1], ehdr)
+	datalen = rxcore.unwrap_hdr(server.key, nonces[1], ehdr)
 	if not datalen then 
 		msg = "header decrypt error"
 		eno = -1
@@ -171,7 +171,6 @@ ppp("#ehdr", #ehdr)
 		-- decrypted, so the client is assumed to be genuine.)
 		-- => reset the ban try counter for the client ip
 		-- rxd.ban_counter_reset(server, cip)
-ppp("rnd:", #rnd, repr(rnd))
 	end
 ppp'got hdr, get data'
 	
@@ -192,8 +191,7 @@ ppp'got hdr, get data'
 	rdata = rxd.handle_req(data)
 	
 	-- send the response
-ppp("rnd:", repr(rnd))
-	rhdr, rdata = rxcore.wrap_resp(server.key, nonces, rdata, rnd)
+	rhdr, rdata = rxcore.wrap_resp(server.key, nonces, rdata)
 
 ppp'send rhdr'
 	r, eno = sock.write(cso, rhdr)

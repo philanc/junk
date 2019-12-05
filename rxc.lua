@@ -54,9 +54,7 @@ function rxc.request(server, data)
 	local sso, r, eno, msg
 	local len = #data
 	local key = server.key
-	local ehdr, edata, nl, rnd = rxcore.wrap_req(key, data)
-ppp("rnd:", #rnd, repr(rnd))
-
+	local ehdr, edata, nl = rxcore.wrap_req(key, data)
 	--
 	-- connect to server
 	local sockaddr = server.sockaddr 
@@ -66,7 +64,7 @@ ppp("rnd:", #rnd, repr(rnd))
 	
 	-- declare local before goto to prevent
 	-- "jumps into the scope of local" error
-	local rlen, rdata, rrnd
+	local rlen, rdata
 	
 	--
 	-- send 1st nonce and header
@@ -78,15 +76,9 @@ ppp("rnd:", #rnd, repr(rnd))
 	-- recv response header
 	ehdr, eno = sock.read(sso, rxcore.HDRLEN)
 	if not ehdr then msg = "recv header"; goto ioerror end
-	rlen, rrnd = rxcore.unwrap_hdr(key, nl[3], ehdr)
+	rlen, msg= rxcore.unwrap_hdr(key, nl[3], ehdr)
 	if not rlen then
 		eno = -1
-		msg = rrnd
-		goto ioerror
-	end
-	if rrnd ~= rnd then
-		eno = -2
-		msg = "req and resp headers not matching"
 		goto ioerror
 	end
 	

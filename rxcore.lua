@@ -152,17 +152,20 @@ end
 ------------------------------------------------------------------------
 -- header and data encryption/decryption
 
-local function wrap_hdr(key, nonce, datalen, rnd)
+local function wrap_hdr(key, nonce, datalen)
+	-- a random string is included to make known plaintext attacks harder
+	local rnd = randombytes(12)
 	local hdr = spack("c12<i4", rnd, datalen)
 	local ehdr = encrypt(key, nonce, hdr)
 	return ehdr
 end
 
 local function unwrap_hdr(key, nonce, ehdr)
+	-- decrypt a header, return the data length
 	local hdr, err = decrypt(key, nonce, ehdr)
 	if not hdr then return nil, "unwrap_header: " .. err end
 	local rnd, len = sunpack("c12<i4", hdr)
-	return len, rnd
+	return len
 end
 
 local function wrap_data(key, nonce, data)
@@ -178,19 +181,17 @@ end
 
 local function wrap_req(key, data)
 	-- return the encrypted header, the encrypted data, the list
-	-- of nonces for the request and the response, and the random 
-	-- string included in the headers
+	-- of nonces for the request and the response.
 	data = data or ""
 	local nl = make_noncelist()
-	local rnd = randombytes(12)
-	local ehdr = wrap_hdr(key, nl[1], #data, rnd)
+	local ehdr = wrap_hdr(key, nl[1], #data)
 	local edata = wrap_data(key, nl[2], data)
-	return ehdr, edata, nl, rnd
+	return ehdr, edata, nl
 end
 
-local function wrap_resp(key, nl, data, rnd)
+local function wrap_resp(key, nl, data)
 	data = data or ""
-	local ehdr = wrap_hdr(key, nl[3], #data, rnd)
+	local ehdr = wrap_hdr(key, nl[3], #data)
 	-- here, nonce is NOT prepended to ehdr
 	local edata = wrap_data(key, nl[4], data)
 	return ehdr, edata
@@ -207,12 +208,12 @@ local rxcore = {
 	get_nonce = get_nonce,     -- (ehdr|edata) => rid
 	make_nonce = make_nonce,   -- (rid, ctr) => nonce
 	parse_nonce = parse_nonce, -- (nonce) => rid, time, ctr
-	wrap_hdr = wrap_hdr,       -- (k, rid, ctr, len, rnd) => ehdr
-	wrap_data = wrap_data,     -- (k, rid, ctr, data) => edata
-	unwrap_hdr = unwrap_hdr,   -- (k, ehdr) => rid, ctr, len, rnd
-	unwrap_data = unwrap_data, -- (k, rid, ctr, edata) => data
-	wrap_req = wrap_req,       -- (k, data) => rid, ehdr, edata
-	wrap_resp = wrap_resp,     -- (k, rid, data) => ehdr, edata
+	wrap_hdr = wrap_hdr,       -- (k, nonce, len) => ehdr
+	wrap_data = wrap_data,     -- (k, nonce, data) => edata
+	unwrap_hdr = unwrap_hdr,   -- (k, nonce, ehdr) => len
+	unwrap_data = unwrap_data, -- (k, nonce, edata) => data
+	wrap_req = wrap_req,       -- (k, data) => ehdr, edata, noncelist
+	wrap_resp = wrap_resp,     -- (k, noncelist, data) => ehdr, edata
 
 	HDRLEN = HDRLEN,
 	MACLEN = MACLEN,
