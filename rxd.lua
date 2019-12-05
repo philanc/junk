@@ -23,12 +23,14 @@ v0.8
 --~ local he = require 'he'
 he = require 'he'  -- make he global for request chunks
 local hezen = require 'he.zen'
+local hepack = require 'he.pack'
 local sock = require 'l5.sock'
 
 local traceback = require("debug").traceback
 
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
+local hpack, hunpack = hepack.pack, hepack.unpack
 
 local function px(s, msg) 
 	print("--", msg or "")
@@ -123,14 +125,30 @@ local function handle_cmd(server, cmd, data)
 	return handler(ctx, cmd, data)
 end --handle_cmd
 
-function rxd.handle_req(reqid, data)
-	-- return rcode, rarg, rdata
-	local rdata
+local function rerr(msg, ctx, rt)
+	rt = rt or {}
+	ctx = ctx or ""
+	rt.ok = false
+	rt.errmsg = strf("%s: %s", ctx, rt)
+	return hpack(rt)
+end
 	
-	--XXXXX
-	
+
+function rxd.handle_req(data)
+	-- return rdata
+	local dt, rt, msg
+	rt = {ok = true}
+	dt, msg = hunpack(data)
+	if not dt then return rerr(msg, "unpack data") end
+	if dt.lua then
+		-- execute lua cmd
+	elseif dt.sh then
+		-- execute sh cmd
+	else 
+		return rerr("nothing to do", "handle_req")
 	end
 end
+
 
 local function serve_client(server, cso)
 	-- return false, exitcode to request the server loop to exit. 
@@ -203,6 +221,8 @@ local function serve_client(server, cso)
 		goto cerror
 	end
 	
+	log(strf("client %s %d: req: %s", cip, cport, he.stohex(nonces[1])))
+
 	-- handle the request
 	rdata = rxd.handle_req(data)
 	

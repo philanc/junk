@@ -65,10 +65,10 @@ function rxc.request(server, data)
 	
 	--
 	-- send 1st nonce and header
-	r, eno = sock.write(sso, nl[1] .. eqhdr)
+	r, eno = sock.write(sso, nl[1] .. ehdr)
 	if not r then msg = "send header"; goto ioerror end
 	-- send data
-	r, eno = sock.write(sso, eqdata)
+	r, eno = sock.write(sso, edata)
 	if not r then msg = "send data"; goto ioerror end
 	-- recv response header
 	ehdr, eno = sock.read(sso, rxcore.HDRLEN)
@@ -86,9 +86,9 @@ function rxc.request(server, data)
 	end
 	
 	-- recv resp data
-	r, eno = sock.read(sso, rlen + rxcore.MACLEN)
-	if not r then msg = "recv data"; goto ioerror end
-	rdata, msg = unwrap_data(key, reqid, 3, r)
+	edata, eno = sock.read(sso, rlen + rxcore.MACLEN)
+	if not edata then msg = "recv data"; goto ioerror end
+	rdata, msg = unwrap_data(key, nl[4], edata)
 	if not rdata then 
 		eno = -1
 		msg = "unwrap rdata"
