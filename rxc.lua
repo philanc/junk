@@ -21,6 +21,9 @@ local spack, sunpack = string.pack, string.unpack
 
 local traceback = require("debug").traceback
 
+local ppp=print
+
+
 local function px(s, msg) 
 	print("--", msg or "")
 	print(he.stohex(s, 16, " ")) 
@@ -52,11 +55,13 @@ function rxc.request(server, data)
 	local len = #data
 	local key = server.key
 	local ehdr, edata, nl, rnd = rxcore.wrap_req(key, data)
+ppp("rnd:", #rnd, repr(rnd))
+
 	--
 	-- connect to server
 	local sockaddr = server.sockaddr 
-		or sock.make_ipv4_sockaddr(server.addr, server.port)
-	sso, eno = sock.connect(sockaddr)
+		or sock.sockaddr(server.addr, server.port)
+	sso, eno = sock.sconnect(sockaddr)
 	if not sso then return nil, eno, "connect" end
 	
 	-- declare local before goto to prevent
@@ -88,7 +93,7 @@ function rxc.request(server, data)
 	-- recv resp data
 	edata, eno = sock.read(sso, rlen + rxcore.MACLEN)
 	if not edata then msg = "recv data"; goto ioerror end
-	rdata, msg = unwrap_data(key, nl[4], edata)
+	rdata, msg = rxcore.unwrap_data(key, nl[4], edata)
 	if not rdata then 
 		eno = -1
 		msg = "unwrap rdata"
@@ -106,7 +111,7 @@ end
 
 
 
-
+--[==[
 ------------------------------------------------------------------------
 -- remote execution commands
 
@@ -175,9 +180,10 @@ end
 
 rxc.load_rxd_config = rxcore.load_rxd_config
 
-
+-- ]==]
 	
 ------------------------------------------------------------------------
 -- return module
 
 return rxc
+

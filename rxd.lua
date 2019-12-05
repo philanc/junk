@@ -26,6 +26,8 @@ local hezen = require 'he.zen'
 local hepack = require 'he.pack'
 local sock = require 'l5.sock'
 
+local ppp=print
+
 local traceback = require("debug").traceback
 
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
@@ -43,7 +45,7 @@ end
 
 
 local function log(fmt, ...)
-	print(he.isodate(), strf(fmt, ...))
+	print("LOG: " .. he.isodate(), strf(fmt, ...))
 end
 
 
@@ -94,52 +96,18 @@ function rxd.is_time_valid(server, reqtime)
 	return math.abs(os.time() - reqtime) < server.max_time_drift
 end
 
-local function handle_cmd(server, cmd, data)
-	-- return status:int, resp:string
-	--
---~ 	he.pp(ctx)
-	-- log cmd (first loglen bytes only)
-	local loglen = 50
-	local c = cmd
-	c = (#c < loglen) and c or (c:sub(1,loglen) .. "...")
-	c = c:gsub("%s+", " ")
-	rxd.log(strf("%s:%s %s", 
-		ctx.client_ip, tostring(ctx.client_port), repr(c) ))
-	
-	-- empty cmd: server "ping"
-	if #cmd == 0 then 
-		return 0, "" 
-	end
-	-- find the cmd handler
-	local h, handler
-	h, cmd = cmd:match("^(%S-): (.*)$")
-	if not h then 
-		return 2, "no handler name"
-	end
-	handler = ctx.handlers[h]
-	if not handler then 
-		return 3, "unknown handler"
-	end
-	-- call the handler
-	-- (handler signature: handler(ctx, cmd, data) => status, resp)
-	return handler(ctx, cmd, data)
-end --handle_cmd
-
-local function rerr(msg, ctx, rt)
-	rt = rt or {}
-	ctx = ctx or ""
-	rt.ok = false
-	rt.errmsg = strf("%s: %s", ctx, rt)
-	return hpack(rt)
-end
 	
 
 function rxd.handle_req(data)
 	-- return rdata
+	ppp('handle_req', repr(data))
 	local dt, rt, msg
 	rt = {ok = true}
 	dt, msg = hunpack(data)
 	if not dt then return rerr(msg, "unpack data") end
+	if type(dt) == "string" then 
+		return strf("rxd time: %s  echo: %s", he.isodate(), dt)
+	end
 	if dt.lua then
 		-- execute lua cmd
 	elseif dt.sh then
@@ -158,24 +126,18 @@ local function serve_client(server, cso)
 	local csa = sock.getpeername(cso) -- get client sockaddr
 	local cip, cport = sock.sockaddr_ip_port(csa)
 	
-	-- test if the client is valid (not banned)
-	-- if not, drop the connection without any response
-	if rxd.client_is_banned(server, cip) then
-		sock.close(cso)
-		return true
-	end
-	
 	local r, eno, msg
 	local nonce, ehdr, edata, hdr, data
-	local nonce, time, rnd, ctr, nonces
-	local datalen, code, arg
+	local nonce, reqtime, noncernd, ctr, nonces
+	local datalen, rnd
 	local handler, rcode, rarg, rdata
 	
 	-- read nonce
 	nonce, eno = sock.read(cso, rxcore.NONCELEN)
 	if not nonce then msg = "reading nonce"; goto cerror end
-	time, rnd, ctr = rxcore.parse_nonce(nonce)
-	nonces = rxcore.make_noncelist(time, rnd)
+	reqtime, noncernd, ctr = rxcore.parse_nonce(nonce)
+ppp'got nonce'
+	nonces = rxcore.make_noncelist(time, noncernd)
 	nonce = nonces[1] 	-- << this is on purpose:
 			-- to prevent an attacker to bypass anti-replay
 			-- with an initial nonce with ctr > 4
@@ -187,18 +149,19 @@ local function serve_client(server, cso)
 		goto cerror
 	end
 
-	if not rxd.is_time_valid(time) then
+	if not rxd.is_time_valid(server, reqtime) then
 		eno = -1
 		msg = "invalid time"
 		goto cerror
 	end
-	
+
+ppp'get hdr'
 	-- read req header
 	ehdr, eno = sock.read(cso, rxcore.HDRLEN)
 	if not ehdr then msg = "reading ehdr"; goto cerror end
-	
+ppp("#ehdr", #ehdr)
 	--unwrap req header 
-	datalen = rxcore.unwrap_hdr(server.key, nonces[1], ehdr)
+	datalen, rnd = rxcore.unwrap_hdr(server.key, nonces[1], ehdr)
 	if not datalen then 
 		msg = "header decrypt error"
 		eno = -1
@@ -208,30 +171,34 @@ local function serve_client(server, cso)
 		-- decrypted, so the client is assumed to be genuine.)
 		-- => reset the ban try counter for the client ip
 		-- rxd.ban_counter_reset(server, cip)
+ppp("rnd:", #rnd, repr(rnd))
 	end
+ppp'got hdr, get data'
 	
 	-- read data
 	edata, eno = sock.read(cso, datalen + rxcore.MACLEN)
 	if not edata then msg = "reading edata"; goto cerror end
 	-- unwrap data
-	data, msg = unwrap_data(server.key, nonces[2], edata)
+	data, msg = rxcore.unwrap_data(server.key, nonces[2], edata)
 	if not data then
 		eno = -1
 		-- msg is set above
 		goto cerror
 	end
 	
-	log(strf("client %s %d: req: %s", cip, cport, he.stohex(nonces[1])))
+	log(strf("%s %d: req=%s", cip, cport, he.stohex(nonces[1])))
 
 	-- handle the request
 	rdata = rxd.handle_req(data)
 	
 	-- send the response
+ppp("rnd:", repr(rnd))
 	rhdr, rdata = rxcore.wrap_resp(server.key, nonces, rdata, rnd)
-	
+
+ppp'send rhdr'
 	r, eno = sock.write(cso, rhdr)
 	if not r then msg = "sending rhdr"; goto cerror end
-
+ppp('send rdata')
 	r, eno = sock.write(cso, rdata)
 	if not r then msg = "sending rdata"; goto cerror end
 	
@@ -256,19 +223,20 @@ function rxd.serve(server)
 	--	rinse, repeat
 	local cso, sso, r, eno, msg
 	server = server or rxd.server
-	init_ban_list(server)
-	init_used_reqid_list(server)
+--~ 	init_ban_list(server)
+	rxd.init_used_nonce_list(server)
 	server.bind_sockaddr = server.bind_sockaddr or 
-		sock.make_ipv4_sockaddr(server.bind_addr, server.port)
-	sso, msg = sock.bind(server.bind_sockaddr)
+		sock.sockaddr(server.bind_addr, server.port)
+	sso, msg = sock.sbind(server.bind_sockaddr)
 	rxd.log("server bound to %s port %d", server.bind_addr, server.port)
 	
 	local r, exitcode
 	while not r do
-		cso, eno = sock.accept(server)
+		cso, eno = sock.accept(sso)
 		if not cso then
 			rxd.log("rxd.serve: accept error:", eno)
 		else
+			assert(sock.timeout(cso, 5000))
 			r, exitcode = serve_client(server, cso) 
 		end
 	end--while
@@ -279,7 +247,7 @@ function rxd.serve(server)
 	return exitcode
 end--serve()
 
-
+--[==[
 ------------------------------------------------------------------------
 -- handlers
 
@@ -364,6 +332,7 @@ function rxd.handlers.sh(ctx, cmd, data)
 end --rxd.handlers.sh
 
 
+-- ]==]
 
 ------------------------------------------------------------------------
 -- run server
@@ -373,11 +342,11 @@ rxd.log = log
 
 -- set default server parameters
 rxd.server.max_time_drift = 300 -- max secs between client and server time
-rxd.server.ban_max_tries = 3  -- number of tries before being banned
+--~ rxd.server.ban_max_tries = 3  -- number of tries before being banned
 rxd.server.log_rejected = true 
 rxd.server.log_aborted = true
 rxd.server.debug = true
-rxd.server.log_already_banned = true
+--~ rxd.server.log_already_banned = true
 rxd.server.tmpdir = os.getenv"$TMP" or "/tmp"
 
 -- load config
@@ -389,6 +358,8 @@ conf = nil -- conf is no longer needed
 
 -- run the server
 -- os.exit(rxd.serve())
+
+print(rxd.serve())
 
 -- serve() return value can be used by a wrapping script to either
 -- stop or restart the server. convention is to restart server if 
