@@ -15,9 +15,11 @@
 he = require 'he'  -- make he global for request chunks
 local hezen = require 'he.zen'
 local sock = require 'l5.sock'
+local hepack = require 'he.pack'
 
 local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
+local hpack, hunpack = hepack.pack, hepack.unpack
 
 local traceback = require("debug").traceback
 
@@ -48,9 +50,9 @@ local rxcore = require "rxcore"
 local rxc = {}  -- the rxc module
 
 
-function rxc.request(server, data)
-	-- return rdata or nil, eno, msg
-	data = data or ""
+function rxc.request(server, req)
+	-- return resp or nil, eno, msg
+	data = hpack(req)
 	local sso, r, eno, msg
 	local len = #data
 	local key = server.key

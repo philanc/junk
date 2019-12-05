@@ -3,6 +3,7 @@
 server = require "rxconf"
 
 rxc = require "rxc"
+rxcore = require "rxcore"
 
 he = require 'he'  -- make he global for request chunks
 local hezen = require 'he.zen'
@@ -24,11 +25,14 @@ local function repr(x)
 end
 
 local function test_01()
-	local data = hpack("hello")
-	print("req", rxc.request(server, data))
+	print("req", rxc.request(server, "hello"))
 end
 
+local function test_shutdown()
+	print("shutdown!!", rxc.request(server, {exitcode=rxcore.SHUTDOWN} ))
+end
 
 test_01()
+test_shutdown()
 
 

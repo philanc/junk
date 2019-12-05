@@ -117,8 +117,13 @@ function rxd.handle_req(data)
 	if type(dt) == "string" then 
 		return strf("rxd time: %s  echo: %s", he.isodate(), dt)
 	end
-	if type(dt) ~= "table" then return rerr("invalid data content", "handle_req") end
-	-- here 
+	if type(dt) ~= "table" then 
+		return rerr("invalid data content", "handle_req") 
+	end
+	if dt.exitcode then
+		return rerr("exitcode=" .. dt.exitcode, "handle_req"), 
+			dt.exitcode
+	end
 	if dt.lua then
 		-- execute lua cmd
 	elseif dt.sh then
@@ -126,6 +131,7 @@ function rxd.handle_req(data)
 	else 
 		return rerr("nothing to do", "handle_req")
 	end
+	
 end
 
 
@@ -142,6 +148,7 @@ local function serve_client(server, cso)
 	local nonce, reqtime, rnd, ctr, nonces
 	local datalen
 	local handler, rcode, rarg, rdata
+	local exitcode
 	
 	-- read nonce
 	nonce, eno = sock.read(cso, rxcore.NONCELEN)
@@ -199,7 +206,7 @@ ppp'got hdr, get data'
 	log(strf("%s %d: req=%s", cip, cport, he.stohex(nonces[1])))
 
 	-- handle the request
-	rdata = rxd.handle_req(data)
+	rdata, exitcode = rxd.handle_req(data)
 	
 	-- send the response
 	rhdr, rdata = rxcore.wrap_resp(server.key, nonces, rdata)
@@ -212,13 +219,13 @@ ppp('send rdata')
 	if not r then msg = "sending rdata"; goto cerror end
 	
 	do  -- this do block because return MUST be the last stmt of a block
-		return true 
+		return exitcode
 	end
 
 	::cerror::
 	sock.close(cso)
 	log(strf("client %s %d: errno: %d  (%s)", cip, cport, eno, msg))
-	return true
+	return nil
 
 end --serve_client()
 
@@ -239,14 +246,14 @@ function rxd.serve(server)
 	sso, msg = sock.sbind(server.bind_sockaddr)
 	rxd.log("server bound to %s port %d", server.bind_addr, server.port)
 	
-	local r, exitcode
-	while not r do
+	local exitcode
+	while not exitcode do
 		cso, eno = sock.accept(sso)
 		if not cso then
 			rxd.log("rxd.serve: accept error:", eno)
 		else
 			assert(sock.timeout(cso, 5000))
-			r, exitcode = serve_client(server, cso) 
+			exitcode = serve_client(server, cso) 
 		end
 	end--while
 	if cso then sock.close(cso); cso = nil end
@@ -366,9 +373,9 @@ for k,v in pairs(conf) do rxd.server[k] = v end
 conf = nil -- conf is no longer needed
 
 -- run the server
--- os.exit(rxd.serve())
-
-print(rxd.serve())
+local exitcode = rxd.serve()
+print("EXITCODE:", exitcode)
+os.exit(exitcode)
 
 -- serve() return value can be used by a wrapping script to either
 -- stop or restart the server. convention is to restart server if 
