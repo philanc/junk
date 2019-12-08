@@ -28,11 +28,34 @@ local function test_01()
 	print("req", rxc.request(server, "hello"))
 end
 
+local function test_02()
+	-- test lua cmd
+	local dt = {}
+	dt.lua = [[ 
+		local reqt = ... 
+		print(reqt.lua)
+		respt == {ok=true, errmsg="no error!!"}
+		return respt
+	]]
+	local rt, msg, ctx = rxc.request(server, dt)
+	if not rt then 
+		print("!! rxc.request error: ", msg, ctx)
+	else
+		rt = hunpack(rt)
+--~ 		he.pp(rt)
+		if not rt.ok then
+			print("lua cmd error:", rt.errmsg)
+		end
+	end
+end
+
 local function test_shutdown()
 	print("shutdown!!", rxc.request(server, {exitcode=rxcore.SHUTDOWN} ))
 end
 
-test_01()
-test_shutdown()
+--~ test_01()
+test_02()
+
+--~ test_shutdown()
 
 

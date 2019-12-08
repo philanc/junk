@@ -103,14 +103,15 @@ local function rerr(msg, ctx, rt)
 	rt = rt or {}
 	ctx = ctx or ""
 	rt.ok = false
-	rt.errmsg = strf("%s: %s", ctx, rt)
+	rt.errmsg = strf("%s: %s", msg, ctx)
 	return hpack(rt)
 end
 
 function rxd.handle_req(data)
 	-- return rdata
-	ppp('handle_req', repr(data))
-	local dt, rt, msg
+--~ 	ppp('handle_req', repr(data))
+	local dt, rt, msg, r
+	local chunk, luafunc
 	rt = {ok = true}
 	dt, msg = hunpack(data)
 	if not dt then return rerr(msg, "unpack data") end
@@ -125,8 +126,24 @@ function rxd.handle_req(data)
 			dt.exitcode
 	end
 	if dt.lua then
-		-- execute lua cmd
-	elseif dt.sh then
+		-- dt.lua is a lua cmd of the form:
+		luafunc, msg = load(dt.lua)
+		if not luafunc then 
+			return rerr(msg, "loading lua cmd")
+		end
+		r, rt, msg = pcall(luafunc, dt)
+		if not r then
+			-- an error has occurred
+			msg = rt
+			return rerr(msg, "lua cmd error")
+		end
+		if not rt then 
+			return rerr(msg, "in lua cmd")
+		end
+		return hpack(rt)
+	end
+		
+	if dt.sh then
 		-- execute sh cmd
 	else 
 		return rerr("nothing to do", "handle_req")
