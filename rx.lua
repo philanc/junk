@@ -7,8 +7,13 @@
 
 includes former rxc, rxd, rxcore in one file.
 
+can be required as a library (incl public functions from rxc, rxd, rxcore)
+or can be run as a server, with the "serve" argument
 
+	slua rx.lua serve
 
+protocol versions:
+	
 v0.8
 	ban system removed
 	handler table replaced with one handler function
