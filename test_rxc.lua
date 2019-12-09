@@ -90,6 +90,26 @@ local function test_05()
 	print(r, msg)
 end
 
+local function test_05a()
+	print("--------------------test_05a")
+	local r, msg = rxc.sh(server, 'echo "popen process pid: $$" ')
+	print(r, msg)
+end
+
+local function test_06()
+	print("--------------------test_06")
+	local luacmd = [[
+		require'hei'
+		ex = 1
+		pf("os.exit(%d) .............", ex)
+		os.exit(ex)
+ 		--return {ok=true}
+	]]
+	local rt, msg = rxc.lua(server, luacmd)
+	print(rt and rt.errmsg or msg)
+--~ 	pp(rt)
+end
+
 local function test_times()
 	print("--------------------test_times")
 	local luacmd = [[
@@ -113,18 +133,27 @@ local function test_shutdown0()
 	pp(rxc.request(server, {exitcode=rxcore.SHUTDOWN} ))
 end
 
+local function test_restart()
+	print("--------------------restart requested!!")
+	rxc.lua(server, "return {ok=true, exitcode=0}" )
+end
+
 local function test_shutdown()
 	print("--------------------shutdown requested!!")
-	rxc.lua(server, "return {ok=true, exitcode=0}" )
+	rxc.lua(server, "return {ok=true, exitcode=1}" )
 end
 
 --~ test_01()
 --~ test_02()
 --~ test_03()
 --~ test_04()
-test_05()
+--~ test_05()
+--~ test_05a()
+test_06()
+--~ test_times()
 
-test_times()
-test_shutdown()
+if arg[1] == "0" then test_restart() end
+if arg[1] == "1" then test_shutdown() end
+
 
 

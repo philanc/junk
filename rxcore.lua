@@ -219,8 +219,8 @@ local rxcore = {
 	MACLEN = MACLEN,
 	NONCELEN = NONCELEN,
 	
-	SHUTDOWN = 0,
-	RESTART = 1,
+	RESTART = 0,
+	SHUTDOWN = 1,
 
 	VERSION = VERSION,
 }
