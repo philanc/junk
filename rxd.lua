@@ -107,7 +107,7 @@ local function rerr(msg, ctx, rt)
 	return hpack(rt)
 end
 
-function rxd.handle_req(data)
+function rxd.handle_req(data, nonce)
 	-- return rdata
 --~ 	ppp('handle_req', repr(data))
 	local dt, rt, msg, r
@@ -121,12 +121,20 @@ function rxd.handle_req(data)
 	if type(dt) ~= "table" then 
 		return rerr("invalid data content", "handle_req") 
 	end
+	dt.nonce = nonce
 	if dt.exitcode then
 		return rerr("exitcode=" .. dt.exitcode, "handle_req"), 
 			dt.exitcode
 	end
 	if dt.lua then
-		-- dt.lua is a lua cmd of the form:
+		-- dt.lua is a lua cmd. load it as a lua chunk, 
+		-- then call it with dt as an argument
+		-- in the lua cmd, dt can be accessed as: 
+		--	local dt = ...
+		-- the lua cmd should return a "result table" rt as:
+		--	local rt = { . . . }
+		--	return rt
+		--
 		luafunc, msg = load(dt.lua)
 		if not luafunc then 
 			return rerr(msg, "loading lua cmd")
@@ -140,14 +148,10 @@ function rxd.handle_req(data)
 		if not rt then 
 			return rerr(msg, "in lua cmd")
 		end
-		return hpack(rt)
+		return hpack(rt), rt.exitcode
 	end
 		
-	if dt.sh then
-		-- execute sh cmd
-	else 
-		return rerr("nothing to do", "handle_req")
-	end
+	return rerr("nothing to do", "handle_req")
 	
 end
 
@@ -171,7 +175,7 @@ local function serve_client(server, cso)
 	nonce, eno = sock.read(cso, rxcore.NONCELEN)
 	if not nonce then msg = "reading nonce"; goto cerror end
 	reqtime, rnd, ctr = rxcore.parse_nonce(nonce)
-ppp'got nonce'
+--~ ppp'got nonce'
 	nonces = rxcore.make_noncelist(time, rnd)
 	nonce = nonces[1] 	-- << this is on purpose:
 			-- to prevent an attacker to bypass anti-replay
@@ -190,11 +194,11 @@ ppp'got nonce'
 		goto cerror
 	end
 
-ppp'get hdr'
+--~ ppp'get hdr'
 	-- read req header
 	ehdr, eno = sock.read(cso, rxcore.HDRLEN)
 	if not ehdr then msg = "reading ehdr"; goto cerror end
-ppp("#ehdr", #ehdr)
+--~ ppp("#ehdr", #ehdr)
 	--unwrap req header 
 	datalen = rxcore.unwrap_hdr(server.key, nonces[1], ehdr)
 	if not datalen then 
@@ -207,7 +211,7 @@ ppp("#ehdr", #ehdr)
 		-- => reset the ban try counter for the client ip
 		-- rxd.ban_counter_reset(server, cip)
 	end
-ppp'got hdr, get data'
+--~ ppp'got hdr, get data'
 	
 	-- read data
 	edata, eno = sock.read(cso, datalen + rxcore.MACLEN)
@@ -223,15 +227,16 @@ ppp'got hdr, get data'
 	log(strf("%s %d: req=%s", cip, cport, he.stohex(nonces[1])))
 
 	-- handle the request
-	rdata, exitcode = rxd.handle_req(data)
+	-- nonce is passed to the request to be used as a uid if needed
+	rdata, exitcode = rxd.handle_req(data, nonce)
 	
 	-- send the response
 	rhdr, rdata = rxcore.wrap_resp(server.key, nonces, rdata)
 
-ppp'send rhdr'
+--~ ppp'send rhdr'
 	r, eno = sock.write(cso, rhdr)
 	if not r then msg = "sending rhdr"; goto cerror end
-ppp('send rdata')
+--~ ppp('send rdata')
 	r, eno = sock.write(cso, rdata)
 	if not r then msg = "sending rdata"; goto cerror end
 	
@@ -256,7 +261,6 @@ function rxd.serve(server)
 	--	rinse, repeat
 	local cso, sso, r, eno, msg
 	server = server or rxd.server
---~ 	init_ban_list(server)
 	rxd.init_used_nonce_list(server)
 	server.bind_sockaddr = server.bind_sockaddr or 
 		sock.sockaddr(server.bind_addr, server.port)
@@ -280,92 +284,6 @@ function rxd.serve(server)
 	return exitcode
 end--serve()
 
---[==[
-------------------------------------------------------------------------
--- handlers
-
-function rxd.handlers.lua(ctx, cmd, data)
-	-- execute lua 'cmd'; return rcode, rpb
-	local chunk, r, err, rcode, rpb
-	-- define ctx as local in chunk
-	-- (ctx is the first arg passed to chunk, chunk args is '...')
-	cmd = "local ctx = ({...})[1]; " .. cmd
-	-- add data to ctx so it can be accessed by the lua chunk
-	ctx.data = data
-	chunk, err = load(cmd, "cmd", "bt")
-	if not chunk then
-		return 2, "invalid chunk: " .. err
-	end
-	r, err = chunk(ctx) -- must pass ctx to chunk
-	-- chunk is assumed to return rpb, or nil, errmsg
-	if not r and not err then 
-		return 0, ""
-	elseif not r then
-		return 1, tostring(err)
-	else
-		return 0, tostring(r)
-	end
-end --rxd.handlers.lua
-
-function rxd.handlers.uld(ctx, cmd, data)
-	-- upload file to server
-	-- file content is data, filename is cmd
-	local r, msg = he.fput(cmd, data)
-	if not r then
-		return 1, msg
-	else
-		return 0, ""
-	end
-end
-
-function rxd.handlers.dld(ctx, cmd)
-	-- download file to client
-	-- filename is cmd
-	local r, msg = he.fget(cmd)
-	if not r then
-		return 1, msg
-	else
-		return 0, r
-	end
-end
-
-function rxd.handlers.sh0(ctx, cmd)
-	-- raw shell, no stdin, no NX definition
-	--
-	local r, exitcode = he.shell(s)
-	return exitcode, r
-end
-
-function rxd.handlers.sh(ctx, cmd, data)
-	-- basic shell, if #data > 0, stdin is in data
-	-- (default Lua popen cannot handle stdin and stdout
-	--  => copy input to a tmp file, then add input redirection
-	--  to the command)
-	-- an environment variable NX is defined with value ctx.nonce 
-	-- as an hex string.
-	--
-	local r, exitcode, tmpdir, ifn, msg, nx
-	nx = he.stohex(ctx.nonce)
-	cmd = "NX=" .. nx .. "\n" .. cmd
-	if #data == 0 then
-		r, exitcode = he.shell(cmd)
-		return exitcode, r
-	end
-	local tmpdir = server.tmpdir or '.'
-	local ifn = strf("%s/%s.in", tmpdir, nx)
-	local r, msg = he.fput(ifn, data)
-	if not r then
-		return nil, "cannot store stdin"
-	end
-	cmd = strf('%s < %s', cmd, ifn)
-	r, exitcode = he.shell(cmd)
-	-- remove input file
-	os.remove(ifn)
-	return exitcode, r
-end --rxd.handlers.sh
-
-
--- ]==]
 
 ------------------------------------------------------------------------
 -- run server
@@ -375,11 +293,9 @@ rxd.log = log
 
 -- set default server parameters
 rxd.server.max_time_drift = 300 -- max secs between client and server time
---~ rxd.server.ban_max_tries = 3  -- number of tries before being banned
 rxd.server.log_rejected = true 
 rxd.server.log_aborted = true
 rxd.server.debug = true
---~ rxd.server.log_already_banned = true
 rxd.server.tmpdir = os.getenv"$TMP" or "/tmp"
 
 -- load config

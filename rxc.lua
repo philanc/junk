@@ -50,9 +50,11 @@ local rxcore = require "rxcore"
 local rxc = {}  -- the rxc module
 
 
-function rxc.request(server, req)
-	-- return resp or nil, eno, msg
-	data = hpack(req)
+function rxc.request(server, reqt)
+	-- return rt or nil, eno, msg
+	-- reqt is the request table
+	-- rt is the response table
+	data = hpack(reqt)
 	local sso, r, eno, msg
 	local len = #data
 	local key = server.key
@@ -66,7 +68,7 @@ function rxc.request(server, req)
 	
 	-- declare local before goto to prevent
 	-- "jumps into the scope of local" error
-	local rlen, rdata
+	local rlen, rdata, rt
 	
 	--
 	-- send 1st nonce and header
@@ -93,9 +95,10 @@ function rxc.request(server, req)
 		msg = "unwrap rdata"
 		goto ioerror 
 	end
-	
+	rt, msg = hunpack(rdata)
+
 	do -- this do block because return MUST be the last stmt of a block
-	return rdata
+	return rt, msg
 	end
 	
 	::ioerror::
@@ -103,29 +106,72 @@ function rxc.request(server, req)
 	return nil, eno, msg
 end
 
-
-
---[==[
 ------------------------------------------------------------------------
 -- remote execution commands
 
-function rxc.lua(rxs, luacmd, p2)
-	-- run a lua chunk
-	-- (the server defines a local 'req' in the chunk)
-	-- the chunk should return one value or nil, err
-	-- this function returns tostring(value) or nil, err
-	-- p2 is an optional string (defaults to "").
-	-- p2 can be accessed in the chunk as req.p2
+function rxc.lua(server, luacmd, reqt)
+	-- run a lua chunk in the server environment (beware!!)
+	-- rqt is the request table. if not provided it is created.
+	-- it is serialized and passed to the lua chunk on the server.
+	-- the chunk should return a response table
 	--
-	local rcode, rpb = rxc.request(rxs, "lua: " .. luacmd, p2)
-	if not rcode or rcode > 0 then 
-		-- rcode==nil: connection/protocol error
-		-- rcode==1: the lua chunk returned nil, err (rpb=err)
-		return nil, rpb 
+	reqt = reqt or {}
+	reqt.lua = luacmd
+	local rt, eno, msg = rxc.request(server, reqt)
+	if not rt then 
+		msg = strf("rx error %s (%s)", tostring(eno), tostring(msg))
+		return {ok=false, errmsg=msg}
 	end
-	return rpb
+--~ 	print("RT="); he.pp(rt)
+	return rt
 end
 
+function rxc.sh(server, shcmd)
+	local reqt = {shcmd = shcmd, }
+	luacmd = [[
+		local reqt = ...
+		require'hei'
+		local rt = {}
+		local cmd = reqt.shcmd
+		local fh, msg = io.popen(cmd)
+		if not fh then return {errmsg = msg} end
+		local content = fh:read("a")
+		local r, exit, status = fh:close()
+		rt.content = content
+		-- same convention as he.shell: return exitcode or
+		-- signal number + 128
+		rt.status = (exit=='signal' and status+128 or status)
+		return rt
+		]]
+	local rt, msg
+	rt = rxc.lua(server, luacmd, reqt)
+	return rt.content, rt.errmsg
+end --sh()	
+
+function rxc.download(server, filename)
+	local reqt = {}
+	reqt.filename = filename
+	cmd = [[
+		local reqt = ...
+		require'hei'
+		local rt = {}
+		local r, msg = he.fget(filename)
+		if not r then
+			rt.ok = false
+			rt.errmsg = msg
+		else 
+			rt.ok = true
+			rt.content = t
+		end
+		return rt
+		]]
+	local rt, msg
+	rt = rxc.lua(server, cmd, reqt)
+	return rt.content, rt.errmsg
+end --download()
+
+
+--[==[
 function rxc.shell0(rxs, sh)
 	-- run a raw shell command, no stdin, no NX
 	-- sin is the optional content of stdin for the command
