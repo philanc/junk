@@ -16,10 +16,10 @@ echo "$(date) rxd.sh (pid=$$) started" $redir
 ### trap 'exit 2' INT
 
 while /bin/true ;  do
-	lua rxd.lua $redir 2>&1
+	lua rx.lua serve  $redir 2>&1
 	status="$?" 
 	#  restart if exitcode is 0 or 143 (SIGTERM  ::  15 + 128)
-	#    [why adding sigterm here??]
+	#    [why adding sigterm here?]
 	if [ $status != "0" -a $status != "143" ] ; then 
 		break
 	fi
