@@ -300,7 +300,7 @@ local function sh(server, shcmd)
 	local reqt = {shcmd = shcmd, }
 	luacmd = [[
 		local reqt = ...
-		require'hei'
+		require'he.i'
 		local rt = {}
 		local cmd = reqt.shcmd
 		local fh, msg = io.popen(cmd)
@@ -323,7 +323,7 @@ local function download(server, filename)
 	reqt.filename = filename
 	cmd = [[
 		local reqt = ...
-		require'hei'
+		require'he.i'
 		local rt = {}
 		local r, msg = he.fget(filename)
 		if not r then
@@ -449,8 +449,8 @@ local function serve_client(server, cso)
 	nonce, eno = sock.read(cso, rx.NONCELEN)
 	if not nonce then msg = "reading nonce"; goto cerror end
 	reqtime, rnd, ctr = rx.parse_nonce(nonce)
---~ ppp'got nonce'
-	nonces = rx.make_noncelist(time, rnd)
+--~ ppp('got nonce', #nonce)
+	nonces = rx.make_noncelist(reqtime, rnd)
 	nonce = nonces[1] 	-- << this is on purpose:
 			-- to prevent an attacker to bypass anti-replay
 			-- with an initial nonce with ctr > 4

@@ -14,6 +14,8 @@ local list, strf, printf, repr = he.list, string.format, he.printf, he.repr
 local spack, sunpack = string.pack, string.unpack
 local hpack, hunpack = hepack.pack, hepack.unpack
 
+local pf = printf
+
 local function px(s, msg) 
 	print("--", msg or "")
 	print(he.stohex(s, 16, " ")) 
@@ -53,7 +55,7 @@ local function test_03()
 	local dt = {}
 	dt.lua = [[ 
 		local reqt = ... 
-		require'hei'
+		require'he.i'
 		pp(package.loaded)
 		return {ok=true}
 	]]
@@ -73,7 +75,7 @@ local function test_04()
 	print("--------------------test_04")
 	local luacmd = [[
 		local reqt = ...
-		require'hei'
+		require'he.i'
 		print("nonce:", he.stohex(reqt.nonce))
 		print("--------------------")
 		return {ok=true}
@@ -98,7 +100,7 @@ end
 local function test_06()
 	print("--------------------test_06")
 	local luacmd = [[
-		require'hei'
+		require'he.i'
 		ex = 1
 		pf("os.exit(%d) .............", ex)
 		os.exit(ex)
@@ -113,7 +115,7 @@ local function test_times()
 	print("--------------------test_times")
 	local luacmd = [[
 		local reqt = ...
-		require'hei'
+		require'he.i'
 		local hepack = require 'he.pack'
 		rt = {}
 		rt.reqtime = string.unpack("<I4", reqt.nonce)
@@ -123,6 +125,7 @@ local function test_times()
 		return rt
 	]]
 	local rt, msg = rx.lua(server, luacmd)
+--~ 	he.pp(rt)
 	pf("client time: %d   server time: %d   client-server: %d",
 		rt.reqtime, rt.servtime, rt.reqtime - rt.servtime )
 end
@@ -149,7 +152,7 @@ end
 --~ test_05()
 test_05a()
 --~ test_06()
---~ test_times()
+test_times()
 
 if arg[1] == "0" then test_restart() end
 if arg[1] == "1" then test_shutdown() end
