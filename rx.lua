@@ -277,15 +277,17 @@ function request(server, reqt)
 end
 
 ------------------------------------------------------------------------
--- client remote execution commands
+-- client functions:  remote execution commands
 
-local function lua(server, luacmd, reqt)
+local function lua(server, luacmd, desc, reqt)
 	-- run a lua chunk in the server environment (beware!!)
-	-- rqt is the request table. if not provided it is created.
+	-- desc is an optional command short description (for logging)
+	-- reqt is the request table. if not provided it is created.
 	-- it is serialized and passed to the lua chunk on the server.
 	-- the chunk should return a response table
 	--
 	reqt = reqt or {}
+	reqt.desc = reqt.desc or desc
 	reqt.lua = luacmd
 	local rt, eno, msg = rx.request(server, reqt)
 	if not rt then 
@@ -296,8 +298,8 @@ local function lua(server, luacmd, reqt)
 	return rt
 end
 
-local function sh(server, shcmd)
-	local reqt = {shcmd = shcmd, }
+local function sh(server, shcmd, desc)
+	local reqt = {shcmd = shcmd, desc = desc, }
 	luacmd = [[
 		local reqt = ...
 		require'he.i'
@@ -314,13 +316,14 @@ local function sh(server, shcmd)
 		return rt
 		]]
 	local rt, msg
-	rt = rx.lua(server, luacmd, reqt)
+	rt = rx.lua(server, luacmd, desc, reqt)
 	return rt.content, rt.errmsg
 end --sh()	
 
 local function download(server, filename)
 	local reqt = {}
 	reqt.filename = filename
+	reqt.desc = "download" .. filename
 	cmd = [[
 		local reqt = ...
 		require'he.i'
@@ -346,7 +349,7 @@ end --download()
 
 
 -----------------------------------------------------------------------
--- server - anti-replay and other utilities
+-- server functions:  anti-replay and other utilities
 
 	
 local function init_used_nonce_list(server)
@@ -378,10 +381,11 @@ local function rerr(msg, ctx, rt)
 	ctx = ctx or ""
 	rt.ok = false
 	rt.errmsg = strf("%s: %s", msg, ctx)
+	log("handle_req error: " .. rt.errmsg)
 	return hpack(rt)
 end
 
-local function handle_req(data, nonce)
+local function handle_req(data, nonce, cip, cport)
 	-- return rdata
 --~ 	ppp('handle_req', repr(data))
 	local dt, rt, msg, r
@@ -396,6 +400,10 @@ local function handle_req(data, nonce)
 		return rerr("invalid data content", "handle_req") 
 	end
 	dt.nonce = nonce
+	dt.cip = cip
+	dt.cport = cport
+	local desc = dt.desc or ("n=" .. he.stohex(nonce))
+	log(strf("%s %d: %s", cip, cport, desc))
 	if dt.exitcode then
 		return rerr("exitcode=" .. dt.exitcode, "handle_req"), 
 			dt.exitcode
@@ -498,11 +506,13 @@ local function serve_client(server, cso)
 		goto cerror
 	end
 	
-	log(strf("%s %d: req=%s", cip, cport, he.stohex(nonces[1])))
+	-- don't log here
+ 	--log(strf("%s %d: req=%s", cip, cport, he.stohex(nonces[1])))
 
 	-- handle the request
 	-- nonce is passed to the request to be used as a uid if needed
-	rdata, exitcode = handle_req(data, nonce)
+	-- cip, cport are passed for logging
+	rdata, exitcode = handle_req(data, nonce, cip, cport)
 	
 	-- send the response
 	rhdr, rdata = rx.wrap_resp(server.key, nonces, rdata)

@@ -93,7 +93,7 @@ end
 
 local function test_05a()
 	print("--------------------test_05a")
-	local r, msg = rx.sh(server, 'echo "popen process pid: $$" ')
+	local r, msg = rx.sh(server, 'echo "popen process pid: $$" ', "get popen proc pid")
 	print(r, msg)
 end
 
@@ -121,10 +121,9 @@ local function test_times()
 		rt.reqtime = string.unpack("<I4", reqt.nonce)
 		rt.servtime = os.time()
 		rt.ok = true
-		print("--------------------")
 		return rt
 	]]
-	local rt, msg = rx.lua(server, luacmd)
+	local rt, msg = rx.lua(server, luacmd, "compare client and server times")
 --~ 	he.pp(rt)
 	pf("client time: %d   server time: %d   client-server: %d",
 		rt.reqtime, rt.servtime, rt.reqtime - rt.servtime )
@@ -137,12 +136,12 @@ end
 
 local function test_restart()
 	print("--------------------restart requested!!")
-	rx.lua(server, "return {ok=true, exitcode=0}" )
+	rx.lua(server, "return {ok=true, exitcode=0}", "restart requested" )
 end
 
 local function test_shutdown()
 	print("--------------------shutdown requested!!")
-	rx.lua(server, "return {ok=true, exitcode=1}" )
+	rx.lua(server, "return {ok=true, exitcode=1}", "shutdown requested" )
 end
 
 --~ test_01()
