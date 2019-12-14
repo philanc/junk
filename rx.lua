@@ -106,8 +106,8 @@ local function repr(x)
 end
 
 
-local function log(fmt, ...)
-	print("LOG: " .. he.isodate(), strf(fmt, ...))
+local function log(...)
+	print("LOG: " .. he.isodate(), ...)
 end
 
 
@@ -548,7 +548,7 @@ local function serve(server)
 	server.bind_sockaddr = server.bind_sockaddr or 
 		sock.sockaddr(server.bind_addr, server.port)
 	sso, msg = sock.sbind(server.bind_sockaddr)
-	rx.log("server bound to %s port %d", server.bind_addr, server.port)
+	rx.log(strf("server bound to %s port %d", server.bind_addr, server.port))
 	
 	local exitcode
 	while not exitcode do
