@@ -466,13 +466,13 @@ local function serve_client(server, cso)
 	
 	if is_nonce_used(server, nonce) then 
 		eno = -1
-		msg = "nonce reused"
+		msg = "REJECTED/nonce reused"
 		goto cerror
 	end
 
 	if not is_time_valid(server, reqtime) then
 		eno = -1
-		msg = "invalid time"
+		msg = "REJECTED/invalid time"
 		goto cerror
 	end
 
@@ -484,7 +484,7 @@ local function serve_client(server, cso)
 	--unwrap req header 
 	datalen = rx.unwrap_hdr(server.key, nonces[1], ehdr)
 	if not datalen then 
-		msg = "header decrypt error"
+		msg = "REJECTED/decrypt error"
 		eno = -1
 		goto cerror
 	else
@@ -530,7 +530,7 @@ local function serve_client(server, cso)
 
 	::cerror::
 	sock.close(cso)
-	log(strf("client %s %d: errno: %d  (%s)", cip, cport, eno, msg))
+	log(strf("%s %d: eno=%d (%s)", cip, cport, eno, msg))
 	return nil
 
 end --serve_client()

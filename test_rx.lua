@@ -111,6 +111,14 @@ local function test_06()
 --~ 	pp(rt)
 end
 
+
+local function test_07()
+	print("--------------------test_07 get log tail")
+	local r, msg = rx.sh(server, 'tail rxd.log ', "tail rxd.log")
+	print(r, msg)
+end
+
+
 local function test_times()
 	print("--------------------test_times")
 	local luacmd = [[
@@ -149,8 +157,9 @@ end
 --~ test_03()
 --~ test_04()
 --~ test_05()
-test_05a()
+--~ test_05a()
 --~ test_06()
+test_07()
 test_times()
 
 if arg[1] == "0" then test_restart() end
