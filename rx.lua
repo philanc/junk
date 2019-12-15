@@ -346,7 +346,7 @@ local function fget(server, filename)
 		]],
 	}
 	local rt, msg
-	rt, msg = rx.request(server, cmd, reqt)
+	rt, msg = rx.request(server, reqt)
 	if not rt then return false, msg end
 	return rt.str, rt.errmsg	
 end
@@ -369,37 +369,10 @@ local function fput(server, filename, str)
 		]],
 	}
 	local rt, msg
-	rt, msg = rx.request(server, cmd, reqt)
+	rt, msg = rx.request(server, reqt)
 	if not rt then return false, msg end
 	return rt.ok, rt.errmsg	
 end
-
-local function download(server, filename)
-	local reqt = {}
-	reqt.filename = filename
-	reqt.desc = "download" .. filename
-	cmd = [[
-		local reqt = ...
-		require'he.i'
-		local rt = {}
-		local r, msg = he.fget(filename)
-		if not r then
-			rt.ok = false
-			rt.errmsg = msg
-		else 
-			rt.ok = true
-			rt.content = t
-		end
-		return rt
-		]]
-	local rt, msg
-	rt = rx.lua(server, cmd, reqt)
-	return rt.content, rt.errmsg
-end --download()
-
-
-
-
 
 
 -----------------------------------------------------------------------
@@ -654,7 +627,8 @@ rx = {
 	request = request,
 	lua = lua,
 	sh = sh,
-	download = download,
+	fput = fput,
+	fget = fget,
 
 }--rx module
 
