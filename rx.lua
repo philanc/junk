@@ -224,21 +224,25 @@ function request(server, reqt)
 	-- return rt or nil, eno, msg
 	-- reqt is the request table
 	-- rt is the response table
-	data = hpack(reqt)
+	-- in case of  communication error, return nil, errmsg
+	-- in case of  request handler error at the server, the function 
+	-- should return a valid rt with an 'errmsg' field
+	data, msg = hpack(reqt)
+	if not data then return nil, "reqt pack error: " .. msg end
 	local sso, r, eno, msg
 	local len = #data
 	local key = server.key
 	local ehdr, edata, nl = rx.wrap_req(key, data)
 	--
+	-- declare local before goto to prevent
+	-- "jumps into the scope of local" error
+	local rlen, rdata, rt
+	--
 	-- connect to server
 	local sockaddr = server.sockaddr 
 		or sock.sockaddr(server.addr, server.port)
 	sso, eno = sock.sconnect(sockaddr)
-	if not sso then return nil, eno, "connect" end
-	
-	-- declare local before goto to prevent
-	-- "jumps into the scope of local" error
-	local rlen, rdata, rt
+	if not sso then goto connecterror end
 	
 	--
 	-- send 1st nonce and header
@@ -266,41 +270,44 @@ function request(server, reqt)
 		goto ioerror 
 	end
 	rt, msg = hunpack(rdata)
-
-	do -- this do block because return MUST be the last stmt of a block
-	return rt, msg
+	
+	if not rt then 
+		return false, strf("unpack error (%s)", msg)
+	else 
+		return rt
 	end
 	
 	::ioerror::
 	sock.close(sso)
-	return nil, eno, msg
+	--(fallthru)
+	
+	::connecterror:: 
+	return false, strf("rx error %s (%s)", tostring(eno), tostring(msg))
 end
 
 ------------------------------------------------------------------------
 -- client functions:  remote execution commands
 
-local function lua(server, luacmd, desc, reqt)
+local function lua(server, luacmd, desc)
 	-- run a lua chunk in the server environment (beware!!)
 	-- desc is an optional command short description (for logging)
-	-- reqt is the request table. if not provided it is created.
-	-- it is serialized and passed to the lua chunk on the server.
+	-- a request table is created. it is serialized and passed to 
+	-- the lua chunk on the server.
 	-- the chunk should return a response table
 	--
-	reqt = reqt or {}
-	reqt.desc = reqt.desc or desc
+	reqt = {desc = desc or "(luacmd)"}
 	reqt.lua = luacmd
-	local rt, eno, msg = rx.request(server, reqt)
-	if not rt then 
-		msg = strf("rx error %s (%s)", tostring(eno), tostring(msg))
-		return {ok=false, errmsg=msg}
-	end
---~ 	print("RT="); he.pp(rt)
-	return rt
+	local rt, msg = rx.request(server, reqt)
+	return rt, msg
 end
 
 local function sh(server, shcmd, desc)
+	if not desc then
+		desc = shcmd:sub(1,20) 
+		if #desc < #shcmd then desc = desc .. "..." end
+	end
 	local reqt = {shcmd = shcmd, desc = desc, }
-	luacmd = [[
+	reqt.lua = [[
 		local reqt = ...
 		require'he.i'
 		local rt = {}
@@ -316,9 +323,56 @@ local function sh(server, shcmd, desc)
 		return rt
 		]]
 	local rt, msg
-	rt = rx.lua(server, luacmd, desc, reqt)
-	return rt.content, rt.errmsg
+	rt, msg = rx.request(server, reqt)
+	if rt then return rt.content, rt.errmsg
+	else return false, msg
+	end
 end --sh()	
+
+local function fget(server, filename)
+	local reqt = { 
+		filename = filename, 
+		desc = "fget " .. filename,
+		lua = [[
+		local reqt = ...
+		local he = require "he"
+		local filename = reqt.filename
+		if not filename:match("^%.?/") then
+			filename = "./f/" .. filename
+		end
+		local rt = {}
+		rt.str, rt.errmsg = he.fget(filename, reqt.str)
+		return rt
+		]],
+	}
+	local rt, msg
+	rt, msg = rx.request(server, cmd, reqt)
+	if not rt then return false, msg end
+	return rt.str, rt.errmsg	
+end
+
+local function fput(server, filename, str)
+	local reqt = { 
+		filename = filename, 
+		str = str,
+		desc = "fput " .. filename,
+		lua = [[
+		local reqt = ...
+		local he = require "he"
+		local filename = reqt.filename
+		if not filename:match("^%.?/") then
+			filename = "./f/" .. filename
+		end
+		local rt = {}
+		rt.ok, rt.errmsg = he.fput(filename, reqt.str)
+		return rt
+		]],
+	}
+	local rt, msg
+	rt, msg = rx.request(server, cmd, reqt)
+	if not rt then return false, msg end
+	return rt.ok, rt.errmsg	
+end
 
 local function download(server, filename)
 	local reqt = {}

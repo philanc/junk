@@ -152,15 +152,23 @@ local function test_shutdown()
 	rx.lua(server, "return {ok=true, exitcode=1}", "shutdown requested" )
 end
 
+
+local function test_07()
+	print("--------------------test_07 get log tail")
+	local r, msg = rx.sh(server, 'tail rxd.log ', "tail rxd.log")
+	print(r, msg)
+end
+
+
 --~ test_01()
 --~ test_02()
 --~ test_03()
 --~ test_04()
 --~ test_05()
---~ test_05a()
+test_05a()
 --~ test_06()
-test_07()
-test_times()
+--~ test_07()
+--~ test_times()
 
 if arg[1] == "0" then test_restart() end
 if arg[1] == "1" then test_shutdown() end
