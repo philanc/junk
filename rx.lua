@@ -550,6 +550,9 @@ local function serve_client(server, cso)
 --~ ppp('send rdata')
 	r, eno = sock.write(cso, rdata)
 	if not r then msg = "sending rdata"; goto cerror end
+
+	sock.close(cso)
+	
 	
 	do  -- this do block because return MUST be the last stmt of a block
 		return exitcode
