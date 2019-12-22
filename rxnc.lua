@@ -1,4 +1,9 @@
+--[[
 
+Send and receive an rx request/response with nc (ncat or busybox nc)
+
+
+]]
 
 local rx = require "rx"
 local hepack = require "he.pack"
