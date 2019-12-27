@@ -415,7 +415,7 @@ end
 local function handle_req(data, nonce, cip, cport)
 	-- return rdata
 --~ 	ppp('handle_req', repr(data))
-	local dt, rt, msg, r
+	local dt, rt, rdata, msg, r
 	local chunk, luafunc
 	rt = {ok = true}
 	dt, msg = hunpack(data)
@@ -457,7 +457,13 @@ local function handle_req(data, nonce, cip, cport)
 		if not rt then 
 			return rerr(msg, "in lua cmd")
 		end
-		return hpack(rt), rt.exitcode
+		r, rdata, msg = pcall(hpack, rt)
+		if not r then
+			-- an error has occurred in hpack
+			msg = rdata 
+			return rerr(msg, "packing rt in handle_req")
+		end
+		return rdata, rt.exitcode
 	end
 		
 	return rerr("nothing to do", "handle_req")
