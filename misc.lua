@@ -5,8 +5,8 @@
 -- kept here just in case :-)
 --
 ------------------------------------------------------------------------
- local he = require 'he'
-
+local he = require 'he'
+local list = he.list
  
 ------------------------------------------------------------------------
 -- string parsing functions
@@ -234,6 +234,36 @@ function he.tmapl(t, f, ...)
 	end
 	return r
 end
+
+------------------------------------------------------------------------
+-- simplest iterator for he.list() instances 
+-- (based on a __call function in list metatable)
+
+-- why 'unused' argument?
+-- see Lua manual, section "For statement"
+-- an iterator for a Lua for statement is a triplet (func, state, index)
+--	for i, e in func, state, index do ... end
+-- func(state, index) returns a new index and a result (here: i and e)
+-- the iteration stops when the new index is nil.
+-- In the statement:  "for i, e in lst do ... end",
+-- state and index are nil. The __call metamethod of lst is called 
+-- with lst as first argument, plus the actual arguments of the call 
+-- as second and third arguments. For a list lst, the call "lst(x, y)"
+-- is actually "list.__call(lst, x, y)".
+-- This is why the second arg of the metamethod (which should be the 
+-- first argument of the iterator function, ie. the state) is ignored.
+-- the state (ie. the list object itself) is actually passed in the first
+-- __call metamethod argument.
+
+he.list.__call = function(l, unused, i)
+	i = (i or 0) + 1
+	local e = l[i]
+	return e and i, e
+end
+
+-- example
+-- l = list{11,22,33}
+-- for i, e in l do print(i, e) end
 
 
 ------------------------------------------------------------------------
