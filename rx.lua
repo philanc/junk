@@ -5,6 +5,10 @@
 
 === rx
 
+200113  
+	replaced all %d to %s in strf()  (%s performs a tostring() on its arg)
+	added date to VERSION
+
 includes former rxc, rxd, rxcore in one file.
 
 can be required as a library (incl public functions from rxc, rxd, rxcore)
@@ -78,7 +82,7 @@ naming convention:
 
 ]]
 
-local VERSION = "0.8"
+local VERSION = "0.8-200113"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -430,7 +434,7 @@ local function handle_req(data, nonce, cip, cport)
 	dt.cip = cip
 	dt.cport = cport
 	local desc = dt.desc or ("n=" .. he.stohex(nonce))
-	log(strf("%s %d: %s", cip, cport, desc))
+	log(strf("%s %s: %s", cip, cport, desc))
 	if dt.exitcode then
 		return rerr("exitcode=" .. dt.exitcode, "handle_req"), 
 			dt.exitcode
@@ -540,7 +544,7 @@ local function serve_client(server, cso)
 	end
 	
 	-- don't log here
- 	--log(strf("%s %d: req=%s", cip, cport, he.stohex(nonces[1])))
+ 	--log(strf("%s %s: req=%s", cip, cport, he.stohex(nonces[1])))
 
 	-- handle the request
 	-- nonce is passed to the request to be used as a uid if needed
@@ -566,7 +570,7 @@ local function serve_client(server, cso)
 
 	::cerror::
 	sock.close(cso)
-	log(strf("%s %d: eno=%d (%s)", cip, cport, eno, msg))
+	log(strf("%s %s: eno=%s (%s)", cip, cport, eno, msg))
 	return nil
 
 end --serve_client()
@@ -584,7 +588,7 @@ local function serve(server)
 	server.bind_sockaddr = server.bind_sockaddr or 
 		sock.sockaddr(server.bind_addr, server.port)
 	sso, msg = sock.sbind(server.bind_sockaddr)
-	rx.log(strf("server bound to %s port %d", server.bind_addr, server.port))
+	rx.log(strf("server bound to %s port %s", server.bind_addr, server.port))
 	
 	local exitcode
 	while not exitcode do
@@ -667,7 +671,7 @@ if arg[1] and arg[1] == "serve" then
 
 	-- run the server
 	local exitcode = rx.serve(rx.server)
-	print("EXITCODE:", exitcode)
+	rx.log("EXITCODE:", exitcode)
 	os.exit(exitcode)
 
 	-- serve() return value can be used by a wrapping script to either
