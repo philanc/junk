@@ -5,13 +5,17 @@
 
 === args.lua -- command line arguments processing
 
-Arguments may have two forms:
-	"key=value" 
-	or "key="   (an empty value is interpreted as false)
-	or "value"  (positional argument)
-	or key=[ val1 val2 val3 ... ]   (a list of arguments)
+(tested only on linux with a Bourne shell or similar)
 
-There is no positional argument.
+Arguments may have the following forms:
+	"key=value" 
+		("key=" is interpreted as key=false)
+	or key=[ val1 val2 val3 ... ]   (a list of arguments)
+		note: "key=[" without spaces, spaces after key=[, and after
+		each val, including the last one.
+	or "value"  (positional argument)
+
+
 
 The function getargs() returns a table with either key=value pairs 
 or value=true pairs according to the argument form
@@ -41,11 +45,11 @@ example:
 	  [2] = "verify",
 	  cnt = 3,
 	  v = false,
-	  ["in"] = ["fil1", "fil2", "fil3"],
+	  ["in"] = {"fil1", "fil2", "fil3"},
 	  out = "bb.out",
 	}
 
-	
+
 
 ]]
 
@@ -105,7 +109,7 @@ local function getargs(inargs)
 end
 
 
---[[ smoke test:
+-- [[ smoke test:
 
 local iat = {"abc", "de=nil", "kl=[", "111", "v2", "]", "ij=", "k",}
 --~ local iat = {"abc", "de=fgh", "kl=[", "v1", "v2", "ij=", "k",}
@@ -116,7 +120,7 @@ print(at, msg)
 he.pp(at)
 he.pp(at.kl)
 
-]]
+-- ]]
 
 return getargs  -- this module only returns a function
 
