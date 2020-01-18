@@ -28,6 +28,7 @@ Commands:
 	ping      return server time and time difference with server
 	ps        run "ps -f"
 	rest      restart the server
+	sh 'cmd'  run shell command 'cmd  2>&1'        
 	shut      shutdown the server
 	]], arg[0])
 	print(htext)
@@ -51,6 +52,7 @@ function cmdt.ping(at)
 	]], "ping server")
 	if not rt then return print(m) end
 	local st, td = tostring(rt.st), tostring(rt.td) 
+	print(strf("client time: %s", he.isodate19()))
 	print(strf("server time: %s   ctime-stime: %s\n", st, td))
 end--ping
 
@@ -58,6 +60,14 @@ function cmdt.ps(at)
 	local l, m = rx.sh(server, 'ps -f ')
 	print(l or m)
 end--ps
+
+function cmdt.sh(at)
+	local c = at[2]
+	c = c .. " 2>&1"
+	print("rxc sh:",repr(c))
+	local l, m = rx.sh(server, c)
+	print(l or m)	
+end
 
 function cmdt.shut(at)
 	local desc = "shutdown requested"
