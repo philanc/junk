@@ -18,8 +18,7 @@ for i, lib in ipairs(keys(package.preload)) do
 	kl = sortedkeys(require(lib))
 	table.sort(kl)
 	print(string.format("%s --- (%d) %s\n", lib, #kl, table.concat(kl, ", ")))
---~ 	print(string.format("%s\n", table.concat(kl, ", ")))
---~  	print("...", table.concat(keys(require(lib)), ", "))
 end
+
 
 
