@@ -1,4 +1,6 @@
 
+-- display preloaded modules
+
 he = require'he'
 
 local function keys(t)
