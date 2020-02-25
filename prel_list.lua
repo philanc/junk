@@ -13,7 +13,6 @@ local function sortedkeys(t)
 	return st
 end
 
---~ print("\nslua - a static build of Lua 5.3 with some preloaded libraries:")
 print("")
 for i, lib in ipairs(keys(package.preload)) do
 	kl = sortedkeys(require(lib))
