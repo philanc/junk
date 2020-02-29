@@ -17,7 +17,7 @@ jobs:
         echo test, and deploy your project.
         curl "https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64" -o slua
         chmod ugo+x ./slua
-        ./slua citest.lua'
+        ./slua citest.lua
         ls -la
 
         
