@@ -16,7 +16,7 @@ jobs:
         echo Add other actions to build,
         echo test, and deploy your project.
         wget -q https://github.com/philanc/he/archive/master.zip
-	unzip -j -d he master.zip 'he-master/he/*'
+	unzip -j -d he master.zip 'he-master/he/\*'
         wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
         chmod ugo+x ./slua
         ./slua citest.lua
