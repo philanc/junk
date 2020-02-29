@@ -15,5 +15,7 @@ jobs:
       run: |
         echo Add other actions to build,
         echo test, and deploy your project.
-        which wget
+        curl "https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64" -o slua
+        ./slua -e 'print(_VERSION)'
+
         
