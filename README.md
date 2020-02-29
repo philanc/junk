@@ -1,6 +1,6 @@
-# junk
-
 ![CI](https://github.com/philanc/junk/workflows/CI/badge.svg)
+
+# junk
 
 This is a junkyard with some code parts written for other projects
 
