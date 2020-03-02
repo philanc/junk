@@ -10,10 +10,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Run a one-line script
-      run: echo "UNAME: $(uname -a)
+      run: echo "UNAME: $(uname -a)"
     - name: Run a multi-line script
       run: |
-        echo ("multi-line script)"
+        echo "(multi-line script)"
         wget -q https://github.com/philanc/he/archive/master.zip
         unzip -j -d he master.zip 'he-master/he/*'
         wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
