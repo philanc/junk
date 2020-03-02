@@ -18,8 +18,8 @@ jobs:
         # unzip -j -d he master.zip 'he-master/he/*'
         # wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
         # chmod ugo+x ./slua
-        apt-get install lua5.3
-        lua citest.lua
+        sudo apt-get install lua5.3
+        lua5.3 citest.lua
         ls -la
 
         
