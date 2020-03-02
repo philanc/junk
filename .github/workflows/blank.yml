@@ -14,11 +14,12 @@ jobs:
     - name: Run a multi-line script
       run: |
         echo "(multi-line script)"
-        wget -q https://github.com/philanc/he/archive/master.zip
-        unzip -j -d he master.zip 'he-master/he/*'
-        wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
-        chmod ugo+x ./slua
-        ./slua citest.lua
+        # wget -q https://github.com/philanc/he/archive/master.zip
+        # unzip -j -d he master.zip 'he-master/he/*'
+        # wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
+        # chmod ugo+x ./slua
+	apt-get install lua5.3
+        lua citest.lua
         ls -la
 
         
