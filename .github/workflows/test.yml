@@ -14,10 +14,9 @@ jobs:
         echo "UNAME: $(uname -a)"
         wget -q https://github.com/philanc/he/archive/master.zip
         unzip -j -d he master.zip 'he-master/he/*'
-        wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
+        wget -q -O slua https://github.com/philanc/slua/raw/master/bin/slua-x64
         chmod ugo+x ./slua
-        sudo apt-get install lua5.3
-        lua5.3 citest.lua
-        ls -la
+        ./slua citest.lua
+        #ls -la
 
         
