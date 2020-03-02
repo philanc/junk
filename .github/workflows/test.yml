@@ -1,0 +1,23 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run citest.lua
+      run: |
+        echo "UNAME: $(uname -a)"
+        wget -q https://github.com/philanc/he/archive/master.zip
+        unzip -j -d he master.zip 'he-master/he/*'
+        wget -q -O slua https://raw.githubusercontent.com/philanc/slua/master/bin/slua-x64
+        chmod ugo+x ./slua
+        sudo apt-get install lua5.3
+        lua5.3 citest.lua
+        ls -la
+
+        
