@@ -373,7 +373,7 @@ cb.resetvars = function() {
 	pp.cbske = pp.keys.ske
 	pp.cbck = pp.keys.ck
 	pp.cbeb = ""
-	pp.cbmsg = ""
+	pp.cbeb2 = ""
 }
 
 cb.resetvars()
@@ -412,15 +412,17 @@ cb.genck = function() {
 
 cb.hash = function() {
 	var txt = pp.cbeb
-	pp.cbmsg = pu.u2b(nacl.hash(pu.s2u(txt)))
-	pp.refreshinput('cbmsg')
+	pp.cbeb2 = pu.u2b(nacl.hash(pu.s2u(txt)))
+	//~ pp.refreshinput('cbmsg')
+	pp.refreshinput('cbeb2')
 }
 
 cb.hash32 = function() {
 	var txt = pp.cbeb
 	var h = pu.u2b(nacl.hash(pu.s2u(txt)).subarray(0, 32))
-	pp.cbmsg = h
-	pp.refreshinput('cbmsg')
+	pp.cbeb2 = h
+	//~ pp.refreshinput('cbmsg')
+	pp.refreshinput('cbeb2')
 }
 
 cb.encr = function() { 
@@ -462,6 +464,13 @@ cb.loadf = function() {
 	pu.did('cbif').click()
 }
 
+cb.swap = function() {
+	var tmp = pp.cbeb
+	pp.cbeb = pp.cbeb2
+	pp.cbeb2 = tmp
+	pp.refreshinput('cbeb')
+	pp.refreshinput('cbeb2')
+}
 
 // cb rendering
 
@@ -474,7 +483,8 @@ var addinput = function(name) {
 }
 
 var addfileinput = function(name) {
-	pp.addfileinput('cb', 'cb'+name, name+":", "cbeb", 2)
+	//~ pp.addfileinput('cb', 'cb'+name, name+":", "cbeb", 2)
+	pp.addfileinput('footer', 'cb'+name, name+":", "cbeb", 2)
 }
 
 cb.renderinit = function() {
@@ -484,6 +494,7 @@ cb.renderinit = function() {
 	addinput('ck')
 	addfileinput('if')
 	pp.addeditor('cb', 'cbeb')
+	addaction('swap')
 	addaction('en64')
 	addaction('de64')
 	addaction('b2x')
@@ -499,12 +510,12 @@ cb.renderinit = function() {
 	addaction('hash')
 	addaction('hash32')
 	addaction('loadf')
-	addinput('msg', 'msg:') 
+	//~ addinput('msg', 'msg:') 
+	pp.addeditor('cb', 'cbeb2')
 	cb.refresh()
 }
 
 cb.refresh = function() {
-
 	pp.refreshinput('cbpk')
 	pp.refreshinput('cbsk')
 	pp.refreshinput('cbck')
@@ -514,6 +525,7 @@ cb.refresh = function() {
 ////		accepts a filename, which may only be programmatically 
 ////		set to the empty string. 
 	pp.refreshinput('cbeb')
+	pp.refreshinput('cbeb2')
 }
 
 return cb }() // pp.cb object
@@ -573,5 +585,6 @@ window.onload = pp.renderinitpage
 </script>
 </head><body><div id="header">Header...</div><hr>
 <div id="view">View...</div>
-<div id="footer"></div><hr>
+<hr>
+<div id="footer"></div>
 </body></html>
