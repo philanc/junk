@@ -372,24 +372,11 @@ pp.refreshinput = function(varname) {
 	pu.vset(varname, pp[varname])
 }
 
-pp.pkdecrypt = function(etxt) {
-	var ea = etxt.split(/\s*@@\s*/)
-	var cs = pu.pkdecrypt(ea[0], pp.cbp0, pp.cbsk)
-	if (! cs) { return false }
-	for (var i=1; i<ea.length; i++) {
-		var s = pu.pkdecrypt(ea[i], pp.cbp0, pp.cbsk)
-		if (! s) { return false }
-		cs = cs + "\n\n===\n\n" + s 
-	}
-	return cs
-}
 
 // ============================================================
 // default keys
 
 pp.keys = {
-	p0: "XHuPJ/Qsj+927N7ckM+Hvo6dcL6/QgV2bhmU90oXpH4=",
-	s0: "1B0Ww+r5P8jIkEDp/GektoDNA44XJQrBneqaWQzN6Wk=",
 	pk: "dkI0+Z3vLVlt330sViTsn4ronInKppYP1dJmF0Mg/Sg=",
 	sk: "",
 	ck: "",
@@ -417,8 +404,6 @@ cb.cleartext = function() {
 }
 
 cb.resetvars = function() {
-	pp.cbp0 = pp.keys.p0
-	pp.cbs0 = pp.keys.s0
 	pp.cbpk = pp.keys.pk
 	pp.cbsk = pp.keys.sk
 	pp.cbske = pp.keys.ske
@@ -471,6 +456,12 @@ cb.genck = function() {
 	pp.refreshinput('cbck')
 }
 
+cb.hash = function() {
+	var txt = pp.cbeb
+	pp.cbmsg = pu.u2b(nacl.hash(pu.s2u(txt)))
+	pp.refreshinput('cbmsg')
+}
+
 cb.hash32 = function() {
 	var txt = pp.cbeb
 	var h = pu.u2b(nacl.hash(pu.s2u(txt)).subarray(0, 32))
@@ -489,21 +480,13 @@ cb.decr = function() {
 }
 
 cb.pken = function() {
-	pp.cbeb = pu.pkencrypt(pp.cbeb, pp.cbpk, pp.cbs0)
+	pp.cbeb = pu.pkencrypt(pp.cbeb, pp.cbpk, pp.cbsk)
 	pp.refreshinput('cbeb')
 }
 
 cb.pkde = function() {
-	var p0 = vget('cbp0')
-	var sk = vget('cbsk')
 	var etxt = pp.cbeb;
-	var ea = etxt.split(/\s*@@\s*/)
-	var cs = pu.pkdecrypt(ea[0], pp.cbp0, pp.cbsk)
-	for (var i=1; i<ea.length; i++) {
-		var s = pu.pkdecrypt(ea[i], pp.cbp0, pp.cbsk)
-		cs = cs + "\n\n===\n\n" + s 
-	}
-	pp.cbeb = cs
+	pp.cbeb = pu.pkdecrypt(etxt, pp.cbpk, pp.cbsk)
 	pp.refreshinput('cbeb')
 }
 
@@ -542,8 +525,8 @@ var addfileinput = function(name) {
 
 cb.renderinit = function() {
 	did('view').innerHTML = '<div class="section" id="cb" >\n</div>'
-	addinput('p0')
-	addinput('s0')
+	//~ addinput('p0')
+	//~ addinput('s0')
 	addinput('pk')
 	addinput('sk')
 	addinput('ck')
@@ -563,6 +546,7 @@ cb.renderinit = function() {
 	addaction('pkde')
 	addaction('apken')
 	addaction('apkde')
+	addaction('hash')
 	addaction('hash32')
 	addaction('loadf')
 	addinput('msg', 'msg:') 
@@ -570,12 +554,10 @@ cb.renderinit = function() {
 }
 
 cb.refresh = function() {
-	pp.refreshinput('cbp0')
-	pp.refreshinput('cbs0')
+
 	pp.refreshinput('cbpk')
 	pp.refreshinput('cbsk')
 	pp.refreshinput('cbck')
-	//~ pp.refreshinput('cbnc')
 ////	pp.refreshinput('cbif')  --never refresh a file input field
 ////		=> Uncaught InvalidStateError: Failed to set the 'value' 
 ////		property on 'HTMLInputElement': This input element 
@@ -587,25 +569,6 @@ cb.refresh = function() {
 return cb }() // pp.cb object
 
 
-// =========================================================
-
-pp.clkd = function() { 
-
-var clkd = {}
-
-// locals
-var did = pu.did
-var vget = pu.vget
-var vset = pu.vset
-
-clkd.refresh = function() {
-}
-
-clkd.renderinit = function() {
-	clkd.refresh()
-}
-
-return clkd }() // pp.clkd object
 
 // =========================================================
 // change view -- 200503 cbox: only one view: cb
