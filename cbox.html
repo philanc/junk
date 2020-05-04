@@ -227,6 +227,31 @@ pu.pkdecrypt = function(eb, pk0b, skb) {
 	return utxt && pu.u2s(utxt)
 };
 
+pu.apkencrypt = function(txt, pkb) { // anonymous encrypt
+	var akp = nacl.box.keyPair()
+	var apk = akp.publicKey
+	var ask = akp.secretKey
+	var nonce = apk.subarray(0, 24)
+	var tu = pu.s2u(txt);
+	var pk = pu.b2u(pkb);
+	var box = nacl.box(tu, nonce, pk, ask);
+	var tmp = pu.uconcat(apk, box)	
+	var eb = pu.b2bb(pu.u2b(tmp));
+	return eb
+}
+
+pu.apkdecrypt = function(eb, skb) {
+	var e = pu.b2u(eb)
+	var apk = e.subarray(0,32)
+	var n = e.subarray(0,24)
+	e = e.subarray(32)
+	var sk = pu.b2u(skb);
+	var utxt = nacl.box.open(e, n, apk, sk);
+	return utxt && pu.u2s(utxt)
+};
+
+
+
 pu.nonce1 = pu.s2u("111111111111111111111111") // 24 bytes
 pu.key1 = pu.u2b(pu.s2u("11111111111111111111111111111111")) // 32 bytes
 
@@ -482,6 +507,19 @@ cb.pkde = function() {
 	pp.refreshinput('cbeb')
 }
 
+cb.apken = function() {
+	pp.cbeb = pu.apkencrypt(pp.cbeb, pp.cbpk)
+	pp.refreshinput('cbeb')
+}
+
+cb.apkde = function() {
+	var sk = vget('cbsk')
+	var etxt = pp.cbeb;
+	var cs = pu.apkdecrypt(etxt, sk)
+	pp.cbeb = cs
+	pp.refreshinput('cbeb')
+}
+
 cb.loadf = function() {
 	pu.did('cbif').innerHTML = "e*"
 	pu.did('cbif').click()
@@ -523,6 +561,8 @@ cb.renderinit = function() {
 	addaction('decr')
 	addaction('pken')
 	addaction('pkde')
+	addaction('apken')
+	addaction('apkde')
 	addaction('hash32')
 	addaction('loadf')
 	addinput('msg', 'msg:') 
@@ -535,7 +575,7 @@ cb.refresh = function() {
 	pp.refreshinput('cbpk')
 	pp.refreshinput('cbsk')
 	pp.refreshinput('cbck')
-	pp.refreshinput('cbnc')
+	//~ pp.refreshinput('cbnc')
 ////	pp.refreshinput('cbif')  --never refresh a file input field
 ////		=> Uncaught InvalidStateError: Failed to set the 'value' 
 ////		property on 'HTMLInputElement': This input element 
