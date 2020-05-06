@@ -11,6 +11,7 @@ cbox encryption/decryption
 
 local nacl = require "plc.box"
 local base64 = require "plc.base64"
+local sha512 = require "plc.sha2".sha512
 
 local ben, bde = base64.encode, base64.decode 
 
@@ -52,6 +53,16 @@ function cbox.decr(kb, et)
 	local pt, m = nacl.secretbox_open(et, nonce, k)
 	return pt, m
 end --cbox.decr
+
+function cbox.genck(seed)
+	local k
+	if not seed then 
+		k = cbox.randombytes(32)
+	else
+		k = sha512(seed):sub(1,32)
+	end
+	return ben(k)
+end
 
 function cbox.pken(skb, pkb, pt)
 	local sk, pk = bde(skb), bde(pkb)
@@ -102,15 +113,16 @@ function cbox.test()
 	local e = cbox.encr(kb, p)
 	local p2, m = cbox.decr(kb, e)
 	assert(p == p2)
+	assert(#bde(cbox.genck()) == 32)
+	assert(#bde(cbox.genck("abc")) == 32)
+	
 	-- test pken, pkde
 	e = cbox.pken(skb, pkb, p)
 	p2, m = cbox.pkde(skb, pkb, e)
 	assert(p == p2)
 	-- test apken, apkde
 	e = cbox.apken(pkb, p)
-	print(e)
 	p2, m = cbox.apkde(skb, e)
-	print(#e, p2, m)
 	assert(p == p2)
 end
 
