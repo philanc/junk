@@ -10,6 +10,9 @@
 --The first file found, if any, is loaded. 
 ------------------------------------------------------------------------
 
+local he = require "he"
+local moe = require "he.moe"
+
 local strf = string.format
 
 local function dbgf(f, ...) editor.dbg(strf(f, ...)) end
@@ -162,12 +165,101 @@ end
 -- bind function to ^Xl  (string.byte"l" == 108)
 editor.bindings_ctlx[108] = e.eval_lua_buffer -- ^Xl
 
+------------------------------
+-- INSERT DATE
+
+function e.insert_date(b)
+	e.insert(b, os.date("%y%m%d "))
+end
+
+function e.insert_date_sec(b)
+	e.goeot(b)
+	e.nl(b)
+	e.nl(b)
+	e.insert(b, os.date("=== %y%m%d "))
+end
+
+editor.bindings[29] = e.insert_date -- ^5 or ^]
+editor.bindings[31] = e.insert_date_sec -- ^7 or ^_
+
+
 
 ------------------------------------------------------------------------
+-- BUFFER ENCRYPTION
+
+local function gettext(b)
+	return table.concat(b.ll, "\n")
+end
+
+local function settext(b, txt)
+	-- !! clear all the buffer undo list
+	return b:settext(txt)
+end
+
+local function be_wrap(pt)
+	return moe.encrypt(editor.be_key, pt, true)
+end
+
+local function be_unwrap(et)
+	local pt = moe.decrypt(editor.be_key, et, true)
+	if not pt then return nil, "decrypt error" end
+	return pt
+end
+
+local function be_doit(b)
+	local errmsg
+	local k = editor.be_key
+	local bt = gettext(b)
+	local kt = bt:match("^ck=([^\r\n]+)")
+	if kt then -- set key
+		k = moe.stok(kt)
+		editor.be_key = k
+		settext(b, "") -- clear buffer and erase undo history
+		editor.msg("*** key set ***")
+		return true
+	end
+	if (not k) or (k == "") then 
+		editor.msg("*** key not defined ***")
+		return false
+	end	
+	local pflag = bt:match("^%-%-ck%s")
+	if pflag then 
+		settext(b, be_wrap(bt))
+		b.be_plain = false
+	else
+		bt, errmsg = be_unwrap(bt)
+		if bt then
+			settext(b, bt)
+			b.be_plain = true
+		else
+			editor.msg("*** invalid buffer *** " .. errmsg)
+		end
+	end
+end --be_doit
+
+-- trap e.savefile  -- [should also trap e.writefile]
+local core_savefile = e.savefile
+
+e.savefile = function(b)
+	if b.be_plain then 
+		editor.msg("*** cannot save file as-is ***")
+		return false
+	end
+	return core_savefile(b)
+end
+	
+editor.bindings_ctlx[19] = e.savefile -- ^X^S
+editor.bindings_ctlx[57] = be_doit -- ^X9
+
+
+
 
 ------------------------------------------------------------------------
---[[   sections 
+-- SECTIONS
 
+--[[
+
+A section
 - starts at bot, or with '===' at bol , 
 - ends just before the next '===' line or at eot 
 
