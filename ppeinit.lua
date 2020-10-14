@@ -459,7 +459,7 @@ editor.bindings[96] = e.ctlmode  -- backquote
 
 editor.bindings_ctlmode[96] = function(b) -- backquote
 	e.insert(b, "`")
-	editor.in_ctlmode = nil
+--~ 	editor.in_ctlmode = nil
 	end
 
 editor.bindings_ctlmode[91] = e.prevsec -- [
@@ -468,6 +468,33 @@ editor.bindings_ctlmode[93] = e.nextsec -- ]
 editor.bindings_ctlmode[61] = e.eval_lua_section -- '='
 
 ------------------------------------------------------------------------
+-- misc
+
+-- test key
+
+local function insertateot(b, s)
+	e.goeot(b); e.nl(b);
+	e.insert(b, s)
+	editor.redisplay(b)
+end --insertateot
+
+function e.testk(b)
+	-- test readkey
+	insertateot(b, "test read key (space to quit):")
+	while true do
+		local k = editor.nextk()
+		local kname = editor.keyname(k)
+		if k == 32 then break end
+		local m = strf("%d\t%s", k, tostring(kname))
+		insertateot(b, m)
+	end
+	editor.msg("Aborted!")
+end--atest
+
+editor.bindings[20] = e.testk		-- ^T
+
+
+------------------------------------------------------------------------
 -- append some text to the initial message displayed when entering
 -- the editor
-editor.initmsg = editor.initmsg .. " - ppeinit.lua loaded. "
+editor.initmsg = editor.initmsg .. " - ppeinit.lua 200904 loaded. "

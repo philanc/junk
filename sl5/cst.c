@@ -25,6 +25,7 @@
 #include <sys/mount.h>	// BLKGETSIZE64
 #include <sys/socket.h>	// socket..
 #include <sys/un.h>	// AF_UNIX socket
+#include <sys/wait.h>	// waitpid
 
 // #include <sys/ioctl.h>  // for network interfaces (already incl)
 #include <net/if.h>	// for network interfaces (netif)
@@ -107,6 +108,11 @@ void main() {
 	dispintx(020000000)	// O_TMPFILE (octal) in musl: 020200000
 	dispintx(020200000)	//  ie O_TMPFILE | O_DIRECTORY  ?!?
 	dispintx(O_EXCL)
+	dispintx(O_NONBLOCK)
+	dispintx(F_GETFD)
+	dispintx(F_SETFD)
+	dispintx(F_GETFL)
+	dispintx(F_SETFL)
 	//~ dispintx()
 	
 	// dm
@@ -177,6 +183,9 @@ void main() {
 	dispintx(POLLNVAL)
 
 	dispintx(FIONBIO)
+	
+	// waitpid
+	dispintx(WNOHANG)
 	
 	
 	// FRAMEBUFFER
