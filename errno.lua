@@ -169,6 +169,7 @@ es = [[
 133 EHWPOISON Memory page has hardware error
 ]]
 
+
 pat = arg[1]
 
 if not pat then
@@ -182,7 +183,7 @@ print()
 if tonumber(pat) then eno = pat end
 
 if tonumber(pat)  then 
-	for i, el in ipairs(he.lines(es)) do
+	for el in he.lines(es) do
 		if el:find(pat, 1, true) then
 			found = true
 			en, ec, et = el:match("(%d+) (%S+) (.*)$")
@@ -192,7 +193,7 @@ if tonumber(pat)  then
 	end
 else
 	pat = pat:lower()
-	for i, el in ipairs(he.lines(es)) do
+	for el in he.lines(es) do
 		if el:lower():find(pat, 1, true) then
 			found = true
 			en, ec, et = el:match("(%d+) (%S+) (.*)$")

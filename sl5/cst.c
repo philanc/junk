@@ -42,6 +42,7 @@ void main() {
 	dispsize(int)
 	dispsize(long)
 	dispsize(long long)
+	dispsize(size_t)
 	dispsize(pid_t)
 
 	// stat
