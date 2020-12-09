@@ -26,6 +26,7 @@
 #include <sys/socket.h>	// socket..
 #include <sys/un.h>	// AF_UNIX socket
 #include <sys/wait.h>	// waitpid
+#include <time.h>	// clock_gettime, clock_getres
 
 // #include <sys/ioctl.h>  // for network interfaces (already incl)
 #include <net/if.h>	// for network interfaces (netif)
@@ -224,6 +225,12 @@ void main() {
 	dispsize(ifr.ifr_addr)
 	dispsize(ifr.ifr_map)
 	dispint((char*)&ifr.ifr_ifindex - (char*)&ifr)
+	
+	// clock_gettime, ...
+	dispintx(CLOCK_REALTIME)
+	dispintx(CLOCK_MONOTONIC)
+	dispintx(CLOCK_MONOTONIC_RAW)
+	
 	
 	printf("---\n");
 }

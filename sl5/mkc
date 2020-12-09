@@ -1,1 +1,3 @@
-gcc -o cst cst.c && ./cst
+MUBIN=/f/b/p11/cross22-x64/bin/x86_64-linux-musl
+CC=$MUBIN-gcc
+$CC -static -o cst cst.c && ./cst
