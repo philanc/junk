@@ -1,5 +1,5 @@
 
-require 'he.i'
+he = require 'he'
 he.mem_print()
 he.clock_print()
 exitcode = 0
