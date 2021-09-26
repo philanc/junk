@@ -88,10 +88,12 @@ function e.quiteditor(b)
 	editor.quit = true
 end
 
+-- comment next line for day to day usage
 editor.bindings_ctlx[17] = e.quiteditor	-- esc-q, ^X^Q
 
 
--- SHELL 
+
+-------------------------------------------------------------------------- SHELL 
 
 -- Add a new action "line_shell" which takes the current line,
 -- passes it as a command to the shell and inserts the result
@@ -163,6 +165,7 @@ end
 editor.bindings_ctlx[5] = edit_file_at_cursor -- ^X^E, esc-e
 
 
+------------------------------------------------------------------------
 -- EVAL LUA BUFFER
 
 -- eval buffer as a Lua chunk
@@ -216,8 +219,97 @@ end
 editor.bindings_ctlx[12] = e.eval_lua_buffer -- esc-l, ^X^L
 
 
+------------------------------------------------------------------------
+-- INSERT DATE + ITEM
+
+function e.insert_date(b)
+	e.insert(b, os.date("%y%m%d "))
+end
+
+function e.insert_dated_item(b)
+	e.goeot(b)
+	e.nl(b)
+	e.nl(b)
+	e.insert(b, os.date("=== %y%m%d "))
+end
+
+editor.bindings[29] = e.insert_date       -- ^5 or ^]
+editor.bindings[31] = e.insert_dated_item -- ^7 or ^_
 
 
+------------------------------------------------------------------------
+-- BUFFER ENCRYPTION
+
+local moe = require "he.moe"
+
+local function gettext(b)
+	return table.concat(b.ll, "\n")
+end
+
+local function settext(b, txt)
+	-- !! clear all the buffer undo list
+	return b:settext(txt)
+end
+
+local function be_wrap(pt)
+	return moe.encrypt(editor.be_key, pt, true)
+end
+
+local function be_unwrap(et)
+	local pt = moe.decrypt(editor.be_key, et, true)
+	if not pt then return nil, "decrypt error" end
+	return pt
+end
+
+local function be_doit(b)
+	local errmsg
+	local k = editor.be_key
+	local bt = gettext(b)
+	local kt = bt:match("^ck=([^\r\n]+)")
+	if kt then -- set key
+		k = moe.stok(kt)
+		editor.be_key = k
+		settext(b, "") -- clear buffer and erase undo history
+		editor.msg("*** key set ***")
+		return true
+	end
+	if (not k) or (k == "") then 
+		editor.msg("*** key not defined ***")
+		return false
+	end	
+	local pflag = bt:match("^%-%-ck%s")
+	if pflag then 
+		settext(b, be_wrap(bt))
+		b.be_plain = false
+	else
+		bt, errmsg = be_unwrap(bt)
+		if bt then
+			settext(b, bt)
+			b.be_plain = true
+		else
+			editor.msg("*** invalid buffer *** " .. errmsg)
+		end
+	end
+end --be_doit
+
+-- trap e.savefile  -- [should also trap e.writefile]
+local core_savefile = e.savefile
+
+e.savefile = function(b)
+	if b.be_plain then 
+		editor.msg("*** cannot save file as-is ***")
+		return false
+	end
+	return core_savefile(b)
+end
+	
+editor.bindings_ctlx[19] = e.savefile -- ^X^S
+editor.bindings_ctlx[57] = be_doit -- ^X9
+
+
+
+
+------------------------------------------------------------------------
 -- MENU TESTS 
 
 --minimal menu function (210925)
@@ -270,8 +362,8 @@ editor.bindings_ctlx[20] = e.testmenu -- esc-t
 ------------------------------------------------------------------------
 -- ALTERNATIVE BINDINGS
 
-editor.bindings_ctlx[17] = e.exiteditor -- esc-q, ^X^Q
 editor.bindings_ctlx[15] = e.outbuffer -- esc-o, (^O issue w/ mc)
+
 
 ------------------------------------------------------------------------
 -- append some text to the initial message displayed when entering
