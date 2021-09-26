@@ -1,6 +1,9 @@
 
--- 210924   ple7
+-- ple7:  git ple with minor changes and additions defined in ple_init.lua
 
+
+-- 210926  replace ple7 w/ git ple.  move all changes to ple_init
+-- 210925  initial junk/ple7
 
 -- a sample PLE configuration / extension file
 ------------------------------------------------------------------------
@@ -12,9 +15,47 @@
 --
 --The first file found, if any, is loaded.
 ------------------------------------------------------------------------
+-- local defs
 
 local strf = string.format
 
+local e = editor.actions
+local msg = editor.msg
+
+------------------------------------------------------------------------
+-- ple modifications
+
+
+-- prefix handling (210924)
+--	esc def as alias to ctlx
+--	after ctlx or esc, lower-case letters converted to ctl-char
+--	  so esc-a = ^X^A, (but esc-A = ^XA), esc-m = esc-ret = ^X^M, ...
+--	backquote was defined as alias to esc. removed 210926.
+
+e.prefix_ctlx = function(b)
+	-- process ^X prefix
+	local k = editor.nextk()
+	--210924  a..z converted to ^A..^Z
+	if k >= 97 and k <= 122 then 
+		k = k - 96
+	end
+	local kname = "^X-" .. editor.keyname(k)
+	local act = editor.bindings_ctlx[k]
+	if not act then
+		msg(kname .. " not bound.")
+		return false
+	end
+	msg(kname)
+	return act(b)
+end--prefix_ctlx
+
+-- (re)bind prefix_ctlx
+editor.bindings[24] = e.prefix_ctlx
+editor.bindings[27] = e.prefix_ctlx
+			
+
+
+------------------------------------------------------------------------
 -- Configuration
 
 -- Configuration variables and editor extension API are available
@@ -32,14 +73,26 @@ editor.tabspaces = 8
 
 -- Extension API -- when writing extensions, it is recommended to use only
 -- functions defined in the editor.actions table (see ple.lua)
-local e = editor.actions
 
 -- all editor.actions functions take a buffer object as first parameter
 -- and additional parameters for some functions.
 -- A common error is to call an editor.actions function without the buffer
 -- object as first parameter (see examples below).
 
--- SHELL command
+
+-- QUICK EXIT -- DOESN'T CHECK MODIFIED BUFFERS
+
+-- nice for tests. Remove it for day to day usage!!
+
+function e.quiteditor(b)
+	editor.quit = true
+end
+
+editor.bindings_ctlx[17] = e.quiteditor	-- esc-q, ^X^Q
+
+
+-- SHELL 
+
 -- Add a new action "line_shell" which takes the current line,
 -- passes it as a command to the shell and inserts the result
 -- after the current line.
@@ -90,6 +143,7 @@ editor.bindings_ctlx[13] = line_shell
 
 
 -- EDIT FILE AT CURSOR
+
 -- assume the current line contains a filename.
 -- get the filename and open the file in a new buffer
 --
@@ -110,6 +164,7 @@ editor.bindings_ctlx[5] = edit_file_at_cursor -- ^X^E, esc-e
 
 
 -- EVAL LUA BUFFER
+
 -- eval buffer as a Lua chunk
 -- 	Beware! the chunk is evaluated **in the editor environment**
 --	which can be a way to shoot oneself in the foot!
@@ -161,7 +216,11 @@ end
 editor.bindings_ctlx[12] = e.eval_lua_buffer -- esc-l, ^X^L
 
 
--- minimal menu function (210925)
+
+
+-- MENU TESTS 
+
+--minimal menu function (210925)
 
 function e.menu(b, txt, actbl)
 	local ch = editor.readchar(txt, ".")
@@ -191,8 +250,6 @@ function e.menu0(b, txt, actbl)
 	end
 end
 			
-
-
 -- test menu
 function e.testmenu(b)
 	e.menu(b, "test menu - Buf Nextbuf Prevbuf Findfile Yyy Zzz Quit", {
@@ -209,12 +266,12 @@ editor.bindings_ctlx[20] = e.testmenu -- esc-t
 
 
 
--- ALTERNATIVE BINDINGS
 
+------------------------------------------------------------------------
+-- ALTERNATIVE BINDINGS
 
 editor.bindings_ctlx[17] = e.exiteditor -- esc-q, ^X^Q
 editor.bindings_ctlx[15] = e.outbuffer -- esc-o, (^O issue w/ mc)
-
 
 ------------------------------------------------------------------------
 -- append some text to the initial message displayed when entering

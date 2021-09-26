@@ -1,6 +1,6 @@
 
 
-lua ./ple7.lua $@
+lua ../../ple/ple.lua $@
 
 
 
