@@ -220,6 +220,18 @@ editor.bindings_ctlx[12] = e.eval_lua_buffer -- esc-l, ^X^L
 
 
 ------------------------------------------------------------------------
+-- MISC COMMANDS
+
+
+-- SELECT ALL THE TEXT IN A BUFFER
+function e.select_all(b)
+	e.gobot(b)
+	e.mark(b)
+	e.goeot(b)
+end
+
+editor.bindings_ctlx[1] = e.select_all -- esc-a, ^X^A
+
 -- INSERT DATE + ITEM
 
 function e.insert_date(b)
@@ -292,7 +304,7 @@ local function be_doit(b)
 	end
 end --be_doit
 
--- trap e.savefile  -- [should also trap e.writefile]
+-- wrap e.savefile  -- [should also wrap e.writefile]
 local core_savefile = e.savefile
 
 e.savefile = function(b)
