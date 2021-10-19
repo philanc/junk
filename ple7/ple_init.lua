@@ -373,6 +373,7 @@ editor.bindings_ctlx[20] = e.testmenu -- esc-t
 
 ------------------------------------------------------------------------
 -- ALTERNATIVE BINDINGS
+-- (redefinition of bindings in git ple)
 
 editor.bindings_ctlx[15] = e.outbuffer -- esc-o, (^O issue w/ mc)
 
