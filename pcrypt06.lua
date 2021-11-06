@@ -1,24 +1,21 @@
-#!/bin/env slua
+#!/bin/env slua010
 
 -- pcrypt
 
---211106 migrate from luazen/norx to luamonocypher (xchacha20) => v0.7
---191116 exit(1) when key not found => v0.6 (pcrypt06) - LAST with NORX
---	 pcrypt06 must run w/ slua010  (luazen/norx support)
+--191116 exit(1) when key not found => v0.6 (pcrypt06) - LAST W/ NORX
 --180423 adapt to luazen-0.10 => v0.5
 --170504 added kpw command => v0.3
 --170303 added pk en(de)cryption, changed op names => v0.2
 --170302 initial implem.
 
-local pcrypt_VERSION = "pcrypt 0.7 (xchacha20/monocypher)"
+local pcrypt_VERSION = "pcrypt 0.5"
 
 ------------------------------------------------------------------------
 -- local definitions
 
-local lm = require "luamonocypher"
+local lz = require "luazen"
 
 local strf = string.format
-
 
 local function isin(elem, lst)
 	-- test if elem is in a list
@@ -52,81 +49,63 @@ local function fileext(path)
 end
 
 local function perr(...) io.stderr:write(...); io.stderr:write("\n") end
-local function pf(...) perr(strf(...)) end
+
 
 ------------------------------------------------------------------------
--- luamonocypher support
+-- luazen-v0.10 support
 
-local keypair = function()
-	local ask = lm.randombytes(32)
-	local apk = lm.public_key(ask)
+lz.aead_encrypt = lz.norx_encrypt
+lz.aead_decrypt = lz.norx_decrypt
+
+lz.keypair = function()
+	local ask = lz.randombytes(32)
+	local apk = lz.x25519_public_key(ask)
 	return apk, ask
 end
 
-local key_exchange = lm.key_exchange -- (sk, pk) => k
-local encrypt = lm.encrypt
-local decrypt = lm.decrypt
+function lz.key_exchange(ask, bpk)
+	local sec = lz.x25519_shared_secret(ask, bpk)
+	local ctx = lz.blake2b_init(32)
+	lz.blake2b_update(ctx, sec)
+	local k = lz.blake2b_final(ctx)
+	return k
+end
 
 ------------------------------------------------------------------------
 
+
+
 local bsize = 1024 * 1024  -- use 1 MB blocks
-
--- also tested with 
---~ bsize = 4096
-
---[[
-an encrypted block is bsize bytes
-encryption algo: xchacha20
-	key len:   32
-	nonce len: 24
-	mac len:   16
-first block prefix: 32 bytes
-	plain encryption:  prefix = 32 random bytes 
-	pk encryption:  prefix = tmp public key (32 bytes)
-	in both cases the first 24 bytes are used as nonce
-	
-the nonce is passed only with the first block. A counter is used
-to ensure all blocks are encrypted with different nonces.
-
-so   first block contains  (bsize - 32 - 16) of encrypted plain text
-     other blocks contain  (bsize - 16) uf encrypted plain text
-     (32 for prefix, 16 for mac)
-]]
 
 
 function encrypt_stream(k, fhi, fho, pkflag)
 	-- if pkflag is true, k is the public key
 	local pk, rpk, rsk -- the public key and the random key pair
-	local nonce, prefix
+	local nonce
 	if pkflag then
 		pk = k
-		-- generate a random keypair
-		rpk, rsk = keypair() -- generate a random keypair
-		prefix = rpk  -- use the random pk as the nonce
-		k = key_exchange(rsk, pk) -- get the session key
+		rpk, rsk = lz.keypair()
+		nonce = rpk  -- use the random pk as the nonce
+		k = lz.key_exchange(rsk, pk) -- get the session key
 	else
-		prefix = lm.randombytes(32) -- generate a random nonce
+		nonce = lz.randombytes(32)
 	end
-	nonce = prefix:sub(1,24) -- for xcahcha, nonce is only 24 bytes
-	local ninc = 0 -- block counter
+	local ninc = 0
 	local eof = false
-	local rdlen, block
+	-- make sure the encrypted block is bsize bytes
+	local rdlen, block, aad
 	while not eof do
 		-- make sure the encrypted block is bsize bytes
-		if ninc == 0 then -- 1st block
-			rdlen = bsize - 48  
-			-- (48 because prefix = 32 bytes, mac=16 bytes)
-		else -- other blocks
-			rdlen = bsize - 16  -- for the mac
+		if ninc == 0 then
+			rdlen = bsize - 64  --32 for the nonce, 32 for the MAC
+			aad = nonce  -- prefix the first block with the nonce
+		else
+			rdlen = bsize - 32
+			aad = ""
 		end
 		block = fhi:read(rdlen)
 		eof = (#block < rdlen)
-		local cblock = encrypt(k, nonce, block, ninc)
-		if ninc == 0 then -- 1st block
-			cblock = prefix .. cblock
-		end
---~ 		pf("ninc=%s  rd=%s  wr=%s", ninc, #block, #cblock)
-		assert(eof or (#cblock == bsize))
+		local cblock = lz.aead_encrypt(k, nonce, block, ninc, aad)
 		ninc = ninc + 1
 		fho:write(cblock)
 	end--while
@@ -135,7 +114,7 @@ end--encrypt_stream()
 function decrypt_stream(k, fhi, fho, pkflag)
 	-- if pkflag is true, k is the secret key
 	local sk, rpk
-	local nonce, prefix, block 
+	local nonce, block 
 	local aadlen
 	local ninc = 0
 	local eof = false
@@ -144,18 +123,17 @@ function decrypt_stream(k, fhi, fho, pkflag)
 		if not block then return true end --eof
 		eof = (#block < bsize)
 		if ninc == 0 then --first block
-			prefix = block:sub(1, 32)
-			block = block:sub(33)
-			nonce = prefix:sub(1,24)
+			nonce = block:sub(1, 32)
 			if pkflag then 
-				rpk = prefix 
+				rpk = nonce -- the nonce is also the random public key
 				sk = k
-				-- get the session key
-				k = key_exchange(sk, rpk) 
+				k = lz.key_exchange(sk, rpk) -- get the session key
 			end
+			aadlen = 32
 		else
+			aadlen = 0
 		end
-		local pblock, msg = decrypt(k, nonce, block, ninc)
+		local pblock, msg = lz.aead_decrypt(k, nonce, block, ninc, aadlen)
 		ninc = ninc + 1
 		if not pblock then return nil, msg end
 		fho:write(pblock)
@@ -163,13 +141,13 @@ function decrypt_stream(k, fhi, fho, pkflag)
 	return true
 end--decrypt_stream()
 
-local function get_key32(kfn, default_ext)
+local function get_key32(kfn, defaultext)
 	local r, msg, key, keypath
 	-- try to find kfn as-is
 	key = fget(kfn)
 	if key then goto checkkey end
-	-- try with the default extension
-	kfn = kfn .. default_ext
+	-- try with default ext
+	kfn = kfn .. defaultext
 	key = fget(kfn)
 	if key then goto checkkey end
 	-- try to find key in ~/.config/pcrypt/
@@ -180,7 +158,8 @@ local function get_key32(kfn, default_ext)
 	if not key then return nil, "key not found" end
 	
 	::checkkey::
-	if #key ~= 32 then return nil, "invalid key" end
+	if #key < 32 then return nil, "invalid key" end
+	if #key > 32 then key = key:sub(1, 32) end
 	return key
 end--get_key32()
 
@@ -241,12 +220,12 @@ function decrypt_file(k, fni, fno, pkflag)
 end --decrypt_file()
 
 function genkey(kfn)
-	local k = lm.randombytes(32)
+	local k = lz.randombytes(32)
 	return fput(kfn .. ".k", k)
 end
 
 function genkeypair(kfn)
-	local pk, sk = keypair()
+	local pk, sk = lz.keypair()
 	return fput(kfn .. ".pk", pk) and fput(kfn .. ".sk", sk)
 end
 
@@ -259,8 +238,7 @@ function genkeypw(kfn)
 	local pw2 = io.read()
 	os.execute("stty echo")
 	if pw1 ~= pw2 then return nil, "entries do not match"  end
-	--argon2i args: pw, salt, nkb, niter
-	local k = lm.argon2i(pw1, "pcrypt", 20000, 20) 
+	local k = lz.argon2i(pw1, "pcrypt", 20000, 20) --pw, salt, nkb, niter
 	return fput(kfn .. ".k", k)	
 end
 
