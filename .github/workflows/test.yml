@@ -14,7 +14,7 @@ jobs:
         echo "UNAME: $(uname -a)"
         wget -q https://github.com/philanc/he/archive/master.zip
         unzip -j master.zip he-master/he.lua
-        wget -q -O slua https://github.com/philanc/slua/raw/master/bin/slua-x64
+        wget -q -O slua https://github.com/philanc/slua/raw/master/bin/slua
         chmod ugo+x ./slua
         ./slua citest.lua
         #ls -la
