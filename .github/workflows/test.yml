@@ -19,6 +19,6 @@ jobs:
         wget -q -O slua https://github.com/philanc/slua/raw/master/bin/slua
         chmod ugo+x ./slua
         ./slua citest.lua
-        #ls -la
+        ls -la
 
         
