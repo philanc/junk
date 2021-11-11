@@ -401,6 +401,21 @@ cb.genkp = function() {
 	pp.refreshinput('cbsk')
 }
 
+cb.genpk = function() {
+	// 211110 compute the corresponding pk
+	var kp
+	var sk = pu.b2u(pp.cbsk)
+	if  (sk.length != 32)  {
+		pp.cbsk = "INVALID SECRET KEY!"
+	} else {
+		kp = nacl.box.keyPair.fromSecretKey(sk)
+		pp.cbpk = pu.u2b(kp.publicKey)
+		//console.log(pp.cbpk)
+	}
+	pp.refreshinput('cbpk')
+	pp.refreshinput('cbsk')
+}
+
 cb.genck = function() {
 	var seed = pp.cbck
 	var cks = (seed == "")
@@ -500,6 +515,7 @@ cb.renderinit = function() {
 	addaction('b2x')
 	addaction('clear')
 	addaction('genkp')
+	addaction('genpk')
 	addaction('genck')
 	addaction('encr')
 	addaction('decr')
