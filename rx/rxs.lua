@@ -262,20 +262,9 @@ local function runserver(server)
 	sock.close(sso)
 end--runserver
 
-
-------------------------------------------------------------------------
--- initialize server (server-side and client-side)
---
--- filesnames for a server named "abc":
---	path/abc	server conf (address, port, ...)
---	path/abc.k  	current encryption key
---	path/abc.msk  	master secret key (only on client side)
---	path/abc.mpk  	master public key (on both sides)
-
-
-local function serverinit()
-	-- return a server object for the server
-	local server = {
+local function serverinit(server)
+	-- check and initialize server object for a client
+	local default = {
 		-- default configuration
 		
 		-- max secs between client and server time
@@ -287,10 +276,16 @@ local function serverinit()
 		log_rejected = true, 
 		log_aborted = true,
 		debug = true,	
-
 	}
-	mpk = [[qkEidNNBg3hVyVhHoUHBkDCOS8sxdkGD9PouppEggkk=]]
-	server.mpk = assert(lm.b64decode(mpk))
+	-- copy defaults if not already defined in server
+	for k,v in pairs(default) do
+		-- "== nil" because server values may be set to false
+		if server[k] == nil then 
+			server[k] = v
+		end
+	end
+	
+	if not server.mpk then return nil, "missing mpk" end
 	
 	-- generate temp keypair (used for key exchange)
 	local tsk = lm.randombytes(32)
@@ -306,7 +301,18 @@ local function serverinit()
 end--serverinit
 
 
-local server = serverinit()
-runserver(server)
+
+------------------------------------------------------------------------
+-- the rxs module
+
+local rxs = {
+
+	runserver = runserver,
+	serverinit = serverinit,
+
+	VERSION = VERSION,
+}--rxs
+
+return rxs
 
 

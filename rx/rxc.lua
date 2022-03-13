@@ -104,6 +104,8 @@ local function request(server, cmd, input, keyreqflag)
 	local data = spack("<s1s4s4", "rx10", cmd, input)
 	local key = keyreqflag and server.mpk or server.key
 	
+	if not key then return nil, "key missing" end
+	
 	-- wrap request
 	local nonce = newnonce(keyreqflag)
 	local rnd = sunpack("<I4", randombytes(4))
@@ -179,10 +181,9 @@ local function refreshkey(server)
 	local key = lm.key_exchange(server.msk, tpk)
 	assert(key, "key_exchange error")
 	server.key = key
---~ print("refreshkey - tpk, key")
---~ util.px(tpk)
---~ util.px(key)
-	util.fput(server.name .. ".k", key)
+--~ util.px(tpk, "tpk")
+--~ util.px(key, "key")
+	return true
 end
 
 ------------------------------------------------------------------------
@@ -193,9 +194,6 @@ local function clientinit(server)
 	if not server.msk then error("msk missing") end
 	if not server.mpk then
 		server.mpk = lm.public_key(server.msk)
-	end
-	if not server.key then 
-		return nil, "key missing"
 	end
 	return server
 end--clientinit

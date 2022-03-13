@@ -8,7 +8,8 @@ util = {}
 
 function util.pf(...) print(strf(...)) end
 
-function util.px(s) -- hex dump the string s
+function util.px(s, msg) -- hex dump the string s
+	if msg then print(msg) end
 	for i = 1, #s-1 do
 		io.write(strf("%02x", s:byte(i)))
 		if i%4==0 then io.write(' ') end
