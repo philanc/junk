@@ -1,8 +1,7 @@
-#!/ut/bin/slua
 
 --[[ rx CLI client
 
-syntax: rxcmd  hostname "a shell cmd"  inputfile
+syntax: rx hostname "a shell cmd"  inputfile
 
   inputfile: a filepath or "-" for stdin
 
@@ -32,7 +31,6 @@ if not (arg[1] and arg[2]) then
 end
 
 local name = arg[1]
---~ conf = os.getenv("HOME") .. "/.rx/" .. conf
 name = name .. ".conf"
 
 local confpath = os.getenv("RXPATH") or "./"
