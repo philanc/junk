@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+
+srd=/ut/s/bin
+
+slua mkrx.lua
+$srd/srglue $srd/srlua rx.lua rx
+
+

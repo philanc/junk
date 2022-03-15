@@ -72,11 +72,14 @@ if not rcode then
 	os.exit(1)
 elseif rcode == 0 then
 	print(rdata)
-elseif rcode > 255 then 
+else  
 	print("rcode:", rcode) 
 	print("rdata:", rdata) 
-else
-	os.exit(rcode) 
+	if (type(rcode) == "number") and rcode <= 128 then 
+		os.exit(rcode) 
+	else
+		os.exit(1)
+	end
 end
 
 
