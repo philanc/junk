@@ -188,26 +188,10 @@ end
 
 ------------------------------------------------------------------------
 
-local function clientinit(server)
-	-- check and initialize server object for a client
-
-	if not server.msk then error("msk missing") end
-	if not server.mpk then
-		server.mpk = lm.public_key(server.msk)
-	end
-	server.key = util.fget(server.name .. ".key") --maybe nil
-	return server
-end--clientinit
-
-
-
-------------------------------------------------------------------------
-
 local rxc = {
 
 	request = request,
 	refreshkey = refreshkey,
-	clientinit = clientinit,
 
 	VERSION = VERSION,
 }--rxc

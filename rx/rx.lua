@@ -35,27 +35,26 @@ local name = arg[1]
 --~ conf = os.getenv("HOME") .. "/.rx/" .. conf
 name = name .. ".conf"
 
+local confpath = os.getenv("RXPATH") or "./"
+assert((confpath:match("/$")), "rx path must end with '/'")
+name = confpath .. name 
+
 f, err = loadfile(name)
 if not f then
-	name = os.getenv("HOME") .. "/.rx/" .. name
-	f, err = loadfile(name)
-	if not f then
-		print("conf name:", name)
-		print(err)
-		os.exit(22) -- EINVAL
-	end
+	print("conf name:", name)
+	print(err)
+	os.exit(22) -- EINVAL
 end
 local server = assert(f())
+server.confpath = confpath
 
 -- set msk
 server.msk = util.hextos(server.msk)
 server.mpk = util.hextos(server.mpk)
 assert(server.mpk == lm.public_key(server.msk), "pk matching error")
 
-r, err = assert(rxc.clientinit(server))
-
-
--- get current encryption key
+-- attempt to get current encryption key
+server.key = util.fget(server.confpath .. server.name .. ".key")
 --~ assert(rxc.refreshkey(server))
 
 local cmd = arg[2]
@@ -65,14 +64,19 @@ local inputname = arg[3]
 if inputname then input = assert(util.fget(inputname)) end
 if cmd == "rk" then
 	rxc.refreshkey(server)
-	util.fput(server.name .. ".key", server.key)
+	util.fput(confpath .. server.name .. ".key", server.key)
 	return
 end
 local rcode, rdata = rxc.request(server, cmd, input)
-print(rdata)
 
-if rcode > 255 then 
+if not rcode then
+	print("rx error: " .. tostring(rdata))
+	os.exit(1)
+elseif rcode == 0 then
+	print(rdata)
+elseif rcode > 255 then 
 	print("rcode:", rcode) 
+	print("rdata:", rdata) 
 else
 	os.exit(rcode) 
 end
