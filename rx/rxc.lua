@@ -195,6 +195,7 @@ local function clientinit(server)
 	if not server.mpk then
 		server.mpk = lm.public_key(server.msk)
 	end
+	server.key = util.fget(server.name .. ".key") --maybe nil
 	return server
 end--clientinit
 
