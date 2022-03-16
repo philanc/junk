@@ -56,6 +56,7 @@ server.key = util.fget(server.confpath .. server.name .. ".key")
 --~ assert(rxc.refreshkey(server))
 
 local cmd = arg[2]
+if cmd == "-" then cmd = assert(util.fget("-")) end
 
 local input
 local inputname = arg[3]

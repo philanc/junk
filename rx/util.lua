@@ -104,7 +104,13 @@ end
 	
 function util.fget(fname)
 	-- return content of file 'fname' or nil, msg in case of error
+	-- if fname is '-', then read from stdin
 	local f, msg, s
+	if fname == "-" then
+		s, msg = io.read("*a")
+		if not s then return nil, msg end
+		return s
+	end
 	f, msg = io.open(fname, 'rb')
 	if not f then return nil, msg end
 	s, msg = f:read("*a")
@@ -115,8 +121,13 @@ end
 
 function util.fput(fname, content)
 	-- write 'content' to file 'fname'
+	-- if fname is '-', then write to stdout
 	-- return true in case of success, or nil, msg in case of error
 	local f, msg, r
+	if fname == "-" then
+		r, msg = io.write(content)
+		if not r then return nil, msg else return true end
+	end
 	f, msg = io.open(fname, 'wb')
 	if not f then return nil, msg end
 	r, msg = f:write(content)
@@ -132,10 +143,6 @@ function util.isots(t, utcflag)
 	if utcflag then fmt = "!" .. fmt end
 	return os.date(fmt, t)
 end
-
-
-
-
 
 ------------------------------------------------------------------------
 return util
