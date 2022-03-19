@@ -158,7 +158,7 @@ function sock.readbytes(so, n)
 			if #b == 0 then
 				--EOF, not enough bytes
 				-- return what we have
-				nbs = buf
+				nbs = so.buf
 				so.buf = ""
 				return nbs
 			end

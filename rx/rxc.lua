@@ -11,7 +11,7 @@
 ]]
 ------------------------------------------------------------------------
 
-local VERSION = "rx11-220310 "
+local VERSION = "rx11-220318"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -25,23 +25,6 @@ local errm = util.errm
 
 local strf, repr = string.format, util.repr
 local spack, sunpack = string.pack, string.unpack
-
-local lastlogline = ""
-
-local function log(msg)
-	local line = strf("LOG: %s %s", util.isots(), msg)
-	-- dont fully repeat identical lines
-	if line == lastlogline then 
-		print("*") 
-	else 
-		print(line)
-		lastlogline = line
-	end
-end
-
-
-------------------------------------------------------------------------
-local rx -- the rx module object (defined later)
 
 ------------------------------------------------------------------------
 -- rx encryption
@@ -67,28 +50,19 @@ end
 
 local randombytes = lm.randombytes
 
-
-
-------------------------------------------------------------------------
--- header and data encryption/decryption
-
 local function newnonce(keyreqflag)
+	-- nonce last byte is used to distinguish regular requests
+	-- and key requests
 	local nonce = randombytes(NONCELEN)
 	if keyreqflag then
 		-- ensure nonce ends with 0x01
 		nonce = nonce:gsub(".$", "\x01")
 	else
-		-- emsure nonce doesn't
+		-- emsure nonce doesn't end with 0x01
 		nonce = nonce:gsub("\x01$", "\x00")
 	end
 	return nonce
 end
-
-local function keyreqp(nonce)
-	-- return true if nonce for keyreq (ends with \x01)
-	return (nonce:byte(NONCELEN) == 1)
-end
-
 
 -----------------------------------------------------------------------
 -- client functions
@@ -137,6 +111,11 @@ local function request(server, cmd, input, keyreqflag)
 	step = "read rhdr"
 	ehdr, err = sock.read(sso, EHDRLEN)
 	if not ehdr then goto ioerror end
+	if #ehdr < EHDRLEN then 
+		err = 5  -- EIO
+		goto ioerror
+	end
+		
 	
 	step = "unwrap rhdr"
 	hdr = decrypt(key, nonce, ehdr, 2)
@@ -155,6 +134,10 @@ local function request(server, cmd, input, keyreqflag)
 	step = "read rdata"
 	edata, err = sock.read(sso, len+MACLEN)
 	if not edata then goto ioerror end
+	if #edata < len+MACLEN then 
+		err = 5  -- EIO
+		goto ioerror
+	end
 
 	step = "unwrap rdata"
 	data, msg = decrypt(key, nonce, edata, 3)
@@ -167,7 +150,6 @@ local function request(server, cmd, input, keyreqflag)
 	
 	::ioerror::
 	if sso then sock.close(sso) end
-	
 	return nil, errm(err, step)
 end--request()
 

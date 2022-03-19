@@ -108,7 +108,13 @@ end
 	
 function util.fget(fname)
 	-- return content of file 'fname' or nil, msg in case of error
+	-- if fname is '-', then read from stdin
 	local f, msg, s
+	if fname == "-" then
+		s, msg = io.read("*a")
+		if not s then return nil, msg end
+		return s
+	end
 	f, msg = io.open(fname, 'rb')
 	if not f then return nil, msg end
 	s, msg = f:read("*a")
@@ -119,8 +125,13 @@ end
 
 function util.fput(fname, content)
 	-- write 'content' to file 'fname'
+	-- if fname is '-', then write to stdout
 	-- return true in case of success, or nil, msg in case of error
 	local f, msg, r
+	if fname == "-" then
+		r, msg = io.write(content)
+		if not r then return nil, msg else return true end
+	end
 	f, msg = io.open(fname, 'wb')
 	if not f then return nil, msg end
 	r, msg = f:write(content)
@@ -136,10 +147,6 @@ function util.isots(t, utcflag)
 	if utcflag then fmt = "!" .. fmt end
 	return os.date(fmt, t)
 end
-
-
-
-
 
 ------------------------------------------------------------------------
 return util
@@ -312,7 +319,7 @@ function sock.readbytes(so, n)
 			if #b == 0 then
 				--EOF, not enough bytes
 				-- return what we have
-				nbs = buf
+				nbs = so.buf
 				so.buf = ""
 				return nbs
 			end
@@ -439,12 +446,12 @@ package.preload["rxs"] = function()
 ------------------------------------------------------------------------
 --[[ 	rx server
 
-220309 
-	split server, client code  (older code: see rx10.lua)
+220316	added anti-replay 
+220309 	split server, client code  (older code: see rx10.lua)
 
 ]]
 	
-local VERSION = "rx11-220310"
+local VERSION = "rx11-220316"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -495,7 +502,7 @@ local randombytes = lm.randombytes
 ------------------------------------------------------------------------
 -- nonce
 
-local function keyreqp(nonce)
+local function test_keyreq(nonce)
 	-- return true if nonce for keyreq (ends with \x01)
 	return (nonce:byte(NONCELEN) == 1)
 end
@@ -512,7 +519,7 @@ local function is_nonce_used(server, nonce)
 	-- determine if nonce has recently been used
 	-- then set it to used
 	local  r = server.nonce_tbl[nonce]
-	server.nonce_tbl[nonce] = true
+	server.nonce_tbl[nonce] = os.time()
 	return r
 end
 
@@ -541,7 +548,7 @@ end
 local function handle_cmd(cmd, input, server)
 	-- return rcode, rdata
 	local rcode, rdata = 0, ""
-	local r, msg
+	local r, err, status
 	
 	if cmd == "KEYREQ" then
 		return 0, server.tpk
@@ -554,16 +561,14 @@ local function handle_cmd(cmd, input, server)
 		error("testerror")
 		return 1, "testerror..."
 	end
-	util.fput("f0", input)
+	-- store input (if not empty) before executing command
+	if #input > 0 then util.fput("f0", input) end
 	local fh, msg = io.popen(cmd)
-	if not fh then 
-		return 127, msg
-	end
 	rdata = fh:read("a")
-	local r, exit, status = fh:close()
+	r, status, err = fh:close()
 	-- same convention as he.shell: return exitcode or
 	-- signal number + 128
-	rcode = (exit=='signal' and status+128 or status)
+	rcode = (status=='signal' and err+128 or err)
 	return rcode, rdata
 end--handle_req
 
@@ -583,8 +588,14 @@ local function serve_client(server, cso)
 	step = "read nonce"
 	nonce, err = sock.read(cso, NONCELEN)
 	if not nonce  then goto cerror  end
-	keyreqflag = keyreqp(nonce)
+	keyreqflag = test_keyreq(nonce)
 	key = keyreqflag and server.mpk or server.key 
+	
+	step = "check nonce reuse"
+	if is_nonce_used(server, nonce) then
+		err = 103 -- ECONNABORTED
+		goto cerror
+	end
 	
 	step = "read hdr"
 	ehdr, err = sock.read(cso, EHDRLEN)
@@ -733,6 +744,9 @@ local function serverinit(server)
 --~ print("server key, tpk")
 --~ util.px(key)
 --~ util.px(tpk)
+
+	init_used_nonce_list(server)
+	
 	return server
 end--serverinit
 
