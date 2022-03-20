@@ -565,10 +565,8 @@ local function handle_cmd(cmd, input, server)
 	if #input > 0 then util.fput("f0", input) end
 	local fh, msg, err = io.popen(cmd)
 	if not fh then 
-		return err, errm(err, "popen")
---~ 		print("popen err", #msg, more); os.exit() 
+		return err, errm(err, "popen") -- as rcode, rdata
 	end
-		
 	rdata = fh:read("a")
 	r, status, err = fh:close()
 	-- same convention as he.shell: return exitcode or

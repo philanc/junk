@@ -105,7 +105,7 @@ end
 local function handle_cmd(cmd, input, server)
 	-- return rcode, rdata
 	local rcode, rdata = 0, ""
-	local r, err, status
+	local r, err, status, msg
 	
 	if cmd == "KEYREQ" then
 		return 0, server.tpk
@@ -120,7 +120,10 @@ local function handle_cmd(cmd, input, server)
 	end
 	-- store input (if not empty) before executing command
 	if #input > 0 then util.fput("f0", input) end
-	local fh, msg = io.popen(cmd)
+	local fh, msg, err = io.popen(cmd)
+	if not fh then 
+		return err, errm(err, "popen") -- as rcode, rdata
+	end
 	rdata = fh:read("a")
 	r, status, err = fh:close()
 	-- same convention as he.shell: return exitcode or
