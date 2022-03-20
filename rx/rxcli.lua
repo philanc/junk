@@ -31,29 +31,7 @@ if not (arg[1] and arg[2]) then
 end
 
 local name = arg[1]
-name = name .. ".conf"
-
-local confpath = os.getenv("RXPATH") or "./"
-assert((confpath:match("/$")), "rx path must end with '/'")
-name = confpath .. name 
-
-f, err = loadfile(name)
-if not f then
-	print("conf name:", name)
-	print(err)
-	os.exit(22) -- EINVAL
-end
-local server = assert(f())
-server.confpath = confpath
-
--- set msk
-server.msk = util.hextos(server.msk)
-server.mpk = util.hextos(server.mpk)
-assert(server.mpk == lm.public_key(server.msk), "pk matching error")
-
--- attempt to get current encryption key
-server.key = util.fget(server.confpath .. server.name .. ".key")
---~ assert(rxc.refreshkey(server))
+local server = assert(rxc.loadconf(name))
 
 local cmd = arg[2]
 if cmd == "-" then cmd = assert(util.fget("-")) end
@@ -61,11 +39,13 @@ if cmd == "-" then cmd = assert(util.fget("-")) end
 local input
 local inputname = arg[3]
 if inputname then input = assert(util.fget(inputname)) end
-if cmd == "rk" then
+
+if cmd == "kr" then
 	rxc.refreshkey(server)
-	util.fput(confpath .. server.name .. ".key", server.key)
+	util.fput(server.confpath .. server.name .. ".key", server.key)
 	return
 end
+
 local rcode, rdata = rxc.request(server, cmd, input)
 
 if not rcode then

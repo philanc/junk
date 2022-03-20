@@ -166,7 +166,35 @@ local function refreshkey(server)
 --~ util.px(tpk, "tpk")
 --~ util.px(key, "key")
 	return true
-end
+end--refreshkey
+
+local function loadconf(name)
+	-- return a server object
+	
+	local msg
+	local confpath = os.getenv("RXPATH") or "./"
+	assert((confpath:match("/$")), "rx path must end with '/'")
+	name = confpath .. name  .. ".conf"
+
+	local f, err = loadfile(name)
+	if not f then
+		msg = strf("%s: %s", name, tostring(err))
+		return nil, msg
+	end
+	local server = assert(f())
+	server.confpath = confpath
+
+	-- set msk
+	server.msk = util.hextos(server.msk)
+	server.mpk = util.hextos(server.mpk)
+	if server.mpk ~= lm.public_key(server.msk) then
+		return nil, "pk matching error"
+	end
+
+	-- attempt to get current encryption key
+	server.key = util.fget(server.confpath .. server.name .. ".key")
+	return server
+end--loadconf
 
 ------------------------------------------------------------------------
 
@@ -174,6 +202,7 @@ local rxc = {
 
 	request = request,
 	refreshkey = refreshkey,
+	loadconf = loadconf,
 
 	VERSION = VERSION,
 }--rxc
