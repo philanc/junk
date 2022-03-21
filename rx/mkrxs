@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -e
+
+srd=/ut/s/bin
+
+slua mkrx.lua local
+$srd/srglue $srd/srlua rxs-local.lua rxs-local
+chmod +x rxs-local
+

@@ -6,5 +6,6 @@ srd=/ut/s/bin
 
 slua mkrx.lua
 $srd/srglue $srd/srlua rx.lua rx
+chmod +x rx
 
 
