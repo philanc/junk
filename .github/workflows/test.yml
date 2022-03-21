@@ -9,7 +9,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Run citest.lua
+    - name: Run he/test_hecsv.lua
       run: |
         # get he, slua; slua he/test_hecsv.lua
         # set -x
