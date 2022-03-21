@@ -11,7 +11,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Run citest.lua
       run: |
-        # get he, slua; slua citest.lua
+        # get he, slua; slua he/test_hecsv.lua
         # set -x
         set -v
         uname -a
@@ -19,7 +19,7 @@ jobs:
         unzip -j master.zip he-master/he.lua
         wget -q -O slua https://github.com/philanc/slua/raw/master/bin/slua
         chmod ugo+x ./slua
-        ./slua citest.lua
+        ./slua he/test_hecsv.lua
         #ls -la
 
         
