@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# install
+#	upload rxs-lina1 rxsd rxs.start
+#	ln -s rxs-lina1 rxs.bin
+# launch
+#	./rxs.start
+#
+# launch rxsd directly
+#	nohup ./rxsd </dev/null >>rxs.log 2>&1 &
+# stop rxsd (exit while loop):
+#	touch ./rxsd.mustexit
+# find rxs processes
+#	pgrep -a -f rxs
+
+set -e
+
+ts="date +%y%m%d_%H%M%S"
+
+trap "echo 'rxsd:  $($ts) interrupted!'; exit" INT TERM
+
+rm -f rxs.mustexit rxsd.mustexit
+
+echo $$  >rxsd.pid
+
+while [ ! -f rxsd.mustexit ] 
+do
+	echo "rxsd: starting rxs.bin"
+	./rxs.bin
+	echo "rxsd: rxs.bin exitcode=$?"
+	sleep 1
+done
+
+echo "rxsd: $($ts) exiting.  "

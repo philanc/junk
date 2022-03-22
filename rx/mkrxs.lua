@@ -1,4 +1,5 @@
 
+local rxc = require "rxc"
 local he = require "he"
 local strf = string.format
 
@@ -11,8 +12,11 @@ Usage:   mkrxs name   (eg.  'mkrxs local')
 	os.exit(1)
 end
 
-local f = assert(loadfile(pname .. ".conf"))
-local conf = assert(f())
+--~ local f = assert(loadfile(pname .. ".conf"))
+--~ local conf = assert(f())
+local conf = assert(rxc.loadconf(pname))
+
+print("server conf:",  conf.name, conf.addr, conf.port)
 
 local outname = strf("rxs-%s.lua", conf.name)
 
@@ -62,11 +66,12 @@ rxs.runserver(server)
 
 ]]
 
-local main = strf(fmtmain, outname, conf.mpk, conf.port)
+local main = strf(fmtmain, outname, util.stohex(conf.mpk), conf.port)
 
 table.insert(st, main)
 
 local s = table.concat(st, "\n\n")
+print("server name:", outname)
 he.fput(outname, s)
 
 	

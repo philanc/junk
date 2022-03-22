@@ -249,7 +249,8 @@ local function runserver(server)
 		return nil, msg
 	end
 	log(strf("server %s bound to %s port %s", VERSION,
-		 server.bind_addr, server.port ))
+		server.bind_addr, server.port ))
+	os.remove("./rxs.mustexit")
 	while not server.mustexit do
 		cso, eno = sock.accept(sso)
 		if not cso then
@@ -264,6 +265,9 @@ local function runserver(server)
 --~ 				log(strf("serve_client: %s", msg))
 --~ 			end
 		end
+		-- a simple solution to force server exit:
+		--   $ touch rxs.mustexit
+		server.mustexit = util.fget("./rxs.mustexit")
 	end--while
 	log("server exiting")
 	sock.close(sso)

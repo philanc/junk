@@ -2,7 +2,7 @@
 
 -- pcrypt
 
---211106 migrate from luazen/norx to luamonocypher (xchacha20) => v0.7
+--211106 v0.7 - migrate from luazen/norx to luamonocypher (xchacha20)
 --191116 exit(1) when key not found => v0.6 (pcrypt06) - LAST with NORX
 --	 pcrypt06 must run w/ slua010  (luazen/norx support)
 --180423 adapt to luazen-0.10 => v0.5

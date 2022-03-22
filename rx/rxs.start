@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -e
+
+# launch rxsd:
+nohup ./rxsd </dev/null >>rxs.log 2>&1 &
+
+echo "done.   rxs processes:"
+# wait for rxs.bin to start
+sleep 0.5
+pgrep -a -f rxs
+

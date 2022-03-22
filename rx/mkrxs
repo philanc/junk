@@ -4,7 +4,7 @@ set -e
 
 srd=/ut/s/bin
 
-slua mkrx.lua local
-$srd/srglue $srd/srlua rxs-local.lua rxs-local
-chmod +x rxs-local
+slua mkrxs.lua $1
+$srd/srglue $srd/srlua rxs-$1.lua rxs-$1
+chmod +x rxs-$1
 
