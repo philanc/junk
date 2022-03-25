@@ -1,17 +1,15 @@
 -- Copyright (c) 2022  Phil Leblanc  -- see LICENSE file
 
---[[  rx11 client
+--[[  rx15 client
 
-220310 
-	client-side extracted from rx10.lua
-	removed clientinit(). server parameters are setup by application.
-		(see rxc1.lua sample app)
+220325	rx15 - replaced sh-cmd, input with lua-cmd, param
+	(protocol has not changed since rx10)
 
 
 ]]
 ------------------------------------------------------------------------
 
-local VERSION = "rx11-220318"
+local VERSION = "rx15-220325"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -67,15 +65,15 @@ end
 -----------------------------------------------------------------------
 -- client functions
 
-local function request(server, cmd, input, keyreqflag)
+local function request(server, cmd, param, keyreqflag)
 	-- return rcode, rdata or nil, msg
 	-- in case of  communication error, return nil, errmsg
 	-- in case of  request handler error at the server, the function 
 	-- should return a valid non-zero code (and maybe some error 
 	-- msg in rdata)
-	input = input or ""
+	param = param or ""
 	local sso, r, err, step
-	local data = spack("<s1s4s4", "rx10", cmd, input)
+	local data = spack("<s1s4s4", "rx10", cmd, param)
 	local key = keyreqflag and server.mpk or server.key
 	
 	if not key then return nil, "key missing" end

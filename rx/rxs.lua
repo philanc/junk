@@ -2,13 +2,13 @@
 
 ------------------------------------------------------------------------
 --[[ 	rx server
-
+220325	rx15 - replaced sh-cmd, input with lua-cmd, param
 220316	added anti-replay 
 220309 	split server, client code  (older code: see rx10.lua)
 
 ]]
 	
-local VERSION = "rx11-220316"
+local VERSION = "rx15-220325"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -18,6 +18,7 @@ local sock = require 'ssock'  -- stream sockets
 local errm = util.errm
 local strf, repr = string.format, util.repr
 local spack, sunpack = string.pack, string.unpack
+
 
 local lastlogline = ""
 
@@ -31,6 +32,34 @@ local function log(msg)
 		lastlogline = line
 	end
 end
+
+local traceback = require("debug").traceback
+
+local function execlua(cmd, arg)
+	-- execute a lua command cmd with a single argument arg
+	-- in the current environment. 
+	-- the command is expected to either
+	--	success: return one value, converted to a string
+	-- 	failure: return nil/false, errmsg
+	--	lua error:  catched with a traceback (xpcall)
+	local env = {}
+	for k,v in pairs(_G) do env[k] = v end
+	local f, msg = load(cmd, nil, nil, env)
+	if not f then return nil, msg end
+	local status, ret, err = xpcall(f, traceback, arg)
+	local rcode, rdata
+	if not status then --catched error
+		rcode = 2
+		rdata = tostring(ret)
+	elseif not ret then -- returned failure
+		rcode = 1
+		rdata = tostring(err)
+	else -- returned ok
+		rcode = 0
+		rdata = tostring(ret)
+	end
+	return rcode, rdata
+end--execlua()
 
 ------------------------------------------------------------------------
 -- rx encryption
@@ -91,9 +120,9 @@ end
 local function cmd_summary(cmd)
 	cmd = cmd:gsub("^%s*", "") -- remove leading space and nl
 	cmd = (cmd:match("^(.-)\n")) or cmd -- get first line
-	local ln = 40
+	local ln = 42
 	if #cmd > ln then 
-		cmd = cmd:sub(1, 37) .. "..."
+		cmd = cmd:sub(1, ln-3) .. "..."
 	end
 	return cmd
 end
@@ -102,7 +131,7 @@ end
 ------------------------------------------------------------------------
 --server
 
-local function handle_cmd(cmd, input, server)
+local function handle_cmd(cmd, param, server)
 	-- return rcode, rdata
 	local rcode, rdata = 0, ""
 	local r, err, status, msg
@@ -118,17 +147,8 @@ local function handle_cmd(cmd, input, server)
 		error("testerror")
 		return 1, "testerror..."
 	end
-	-- store input (if not empty) before executing command
-	if #input > 0 then util.fput("f0", input) end
-	local fh, msg, err = io.popen(cmd)
-	if not fh then 
-		return err, errm(err, "popen") -- as rcode, rdata
-	end
-	rdata = fh:read("a")
-	r, status, err = fh:close()
-	-- same convention as he.shell: return exitcode or
-	-- signal number + 128
-	rcode = (status=='signal' and err+128 or err)
+	-- exec cmd as a lua chunk
+	rcode, rdata = execlua(cmd, param)
 	return rcode, rdata
 end--handle_req
 
@@ -141,7 +161,7 @@ local function serve_client(server, cso)
 	local rnd, time, code, len
 	local rcode, rdata
 	local r, err, step 
-	local version, cmd, input
+	local version, cmd, param
 	
 --~ log(strf("serving %s %s", cso.ip, cso.port))
 	
@@ -191,21 +211,21 @@ local function serve_client(server, cso)
 	if not data then err = 22; goto cerror end
 
 	step = "open data"
-	r, version, cmd, input = pcall(sunpack, "<s1s4s4", data)
+	r, version, cmd, param = pcall(sunpack, "<s1s4s4", data)
 	if not r then 
 		err = 71 --EPROTO
 		goto cerror
 	end
 	if keyreqflag then 
-		-- ignore actual cmd and input
+		-- ignore actual cmd and param
 		-- (with keyreq encryption, server should only do this)
 		cmd = "KEYREQ"
-		input = ""
+		param = ""
 	end
 	
 	-- handle command and send response
 	log(strf("%s VRQ %s", cso.ip, cmd_summary(cmd)))
-	rcode, rdata = handle_cmd(cmd, input, server)
+	rcode, rdata = handle_cmd(cmd, param, server)
 
 	len = #rdata  -- maybe empty string but not nil
 	hdr = spack("<I4I4I4I4", rnd, time, rcode, len)

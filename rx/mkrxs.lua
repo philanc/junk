@@ -1,5 +1,5 @@
 
-local rxc = require "rxc"
+local rxc = require "rxc" -- used for loadconf()
 local he = require "he"
 local strf = string.format
 
@@ -12,8 +12,6 @@ Usage:   mkrxs name   (eg.  'mkrxs local')
 	os.exit(1)
 end
 
---~ local f = assert(loadfile(pname .. ".conf"))
---~ local conf = assert(f())
 local conf = assert(rxc.loadconf(pname))
 
 print("server conf:",  conf.name, conf.addr, conf.port)
