@@ -10,7 +10,7 @@ local server = assert(rxc.loadconf("local"))
 
 print("refresh key", rxc.refreshkey(server))
 
-local rcode, rdata = rxc.request(server, "date")
+local rcode, rdata = rxc.request(server, "return 11+22")
 print(rcode, rdata)
 
 local rcode, rdata = rxc.request(server, "MUSTEXIT")
