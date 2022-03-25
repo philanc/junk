@@ -45,7 +45,11 @@ local function execlua(cmd, arg)
 	local env = {}
 	for k,v in pairs(_G) do env[k] = v end
 	local f, msg = load(cmd, nil, nil, env)
-	if not f then return nil, msg end
+	if not f then -- invalid lua / syntax error
+		rcode = 3 
+		rdata = msg
+		return rcode, rdata
+	end
 	local status, ret, err = xpcall(f, traceback, arg)
 	local rcode, rdata
 	if not status then --catched error
