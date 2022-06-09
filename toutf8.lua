@@ -1,3 +1,5 @@
+#!/bin/env lua
+
 --[[
 
 220608    toutf8: convert a mix of latin1 and utf8 to utf8
