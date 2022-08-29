@@ -2,13 +2,15 @@
 
 ------------------------------------------------------------------------
 --[[ 	rx server
-220325	rx15 - replaced sh-cmd, input with lua-cmd, param
-220316	added anti-replay 
 220309 	split server, client code  (older code: see rx10.lua)
+220316	added anti-replay 
+220325	rx15 - replaced sh-cmd, input with lua-cmd, param
+220704  test nonce length in serve_client
+220829  rx17 - replaced lua cmds with predefined commands
 
 ]]
 	
-local VERSION = "rx15-220325"
+RXVERSION = "rx17-220829"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -35,35 +37,6 @@ end
 
 local traceback = require("debug").traceback
 
-local function execlua(cmd, arg)
-	-- execute a lua command cmd with a single argument arg
-	-- in the current environment. 
-	-- the command is expected to either
-	--	success: return one value, converted to a string
-	-- 	failure: return nil/false, errmsg
-	--	lua error:  catched with a traceback (xpcall)
-	local env = {}
-	for k,v in pairs(_G) do env[k] = v end
-	local f, msg = load(cmd, nil, nil, env)
-	if not f then -- invalid lua / syntax error
-		rcode = 3 
-		rdata = msg
-		return rcode, rdata
-	end
-	local status, ret, err = xpcall(f, traceback, arg)
-	local rcode, rdata
-	if not status then --catched error
-		rcode = 2
-		rdata = tostring(ret)
-	elseif not ret then -- returned failure
-		rcode = 1
-		rdata = tostring(err)
-	else -- returned ok
-		rcode = 0
-		rdata = tostring(ret)
-	end
-	return rcode, rdata
-end--execlua()
 
 ------------------------------------------------------------------------
 -- rx encryption
@@ -121,9 +94,11 @@ local function is_time_valid(server, reqtime)
 	return math.abs(os.time() - reqtime) < server.max_time_drift
 end
 
-local function cmd_summary(cmd)
-	cmd = cmd:gsub("^%s*", "") -- remove leading space and nl
-	cmd = (cmd:match("^(.-)\n")) or cmd -- get first line
+local function cmd_summary(cmd, carg)
+	
+	carg = carg:gsub("^%s*", "") -- remove leading space and nl
+	-- get first line of carg
+	cmd = cmd .. " " .. (carg:match("^(.-)\n") or carg) 
 	local ln = 42
 	if #cmd > ln then 
 		cmd = cmd:sub(1, ln-3) .. "..."
@@ -135,25 +110,40 @@ end
 ------------------------------------------------------------------------
 --server
 
-local function handle_cmd(cmd, param, server)
+local function handle_cmd(cmd, carg, param, server)
 	-- return rcode, rdata
 	local rcode, rdata = 0, ""
 	local r, err, status, msg
 	
-	if cmd == "KEYREQ" then
+	if cmd == "keyreq" then
 		return 0, server.tpk
 	end
-	if cmd == "MUSTEXIT" then
+	if cmd == "ping" then
+		return 0, strf("%s - server time: %s", RXVERSION, util.isots()) 
+	end
+	if cmd == "fget" then
+		r, err = util.fget(carg)
+		if r then return 0, r else return 1, err end
+	end
+	if cmd == "fput" then
+		r, err = util.fput(carg, param)
+		if r then return 0, "ok" else return 1, err end
+	end
+	if cmd == "sh" then
+		util.fput("f0", param)
+		r, err = util.sh(carg)
+		if r then return 0, r else return 1, err end
+	end
+	if cmd == "exit" then
 		server.mustexit = 1
 		return 0, "exiting..."
 	end
-	if cmd == "TESTERROR" then
+	if cmd == "testerror" then
 		error("testerror")
 		return 1, "testerror..."
 	end
-	-- exec cmd as a lua chunk
-	rcode, rdata = execlua(cmd, param)
-	return rcode, rdata
+	-- unknow cmd
+	return 1, "rx: unknow cmd"
 end--handle_req
 
 local function serve_client(server, cso)
@@ -172,6 +162,10 @@ local function serve_client(server, cso)
 	step = "read nonce"
 	nonce, err = sock.read(cso, NONCELEN)
 	if not nonce  then goto cerror  end
+	if #nonce < NONCELEN then 
+		err = 22 -- EINVAL
+		goto cerror
+	end
 	keyreqflag = test_keyreq(nonce)
 	key = keyreqflag and server.mpk or server.key 
 	
@@ -215,7 +209,7 @@ local function serve_client(server, cso)
 	if not data then err = 22; goto cerror end
 
 	step = "open data"
-	r, version, cmd, param = pcall(sunpack, "<s1s4s4", data)
+	r, cmd, carg, param = pcall(sunpack, "<s1s4s4", data)
 	if not r then 
 		err = 71 --EPROTO
 		goto cerror
@@ -223,13 +217,14 @@ local function serve_client(server, cso)
 	if keyreqflag then 
 		-- ignore actual cmd and param
 		-- (with keyreq encryption, server should only do this)
-		cmd = "KEYREQ"
+		cmd = "keyreq"
+		carg = ""
 		param = ""
 	end
 	
 	-- handle command and send response
-	log(strf("%s VRQ %s", cso.ip, cmd_summary(cmd)))
-	rcode, rdata = handle_cmd(cmd, param, server)
+	log(strf("%s VRQ %s", cso.ip, cmd_summary(cmd, carg)))
+	rcode, rdata = handle_cmd(cmd, carg, param, server)
 
 	len = #rdata  -- maybe empty string but not nil
 	hdr = spack("<I4I4I4I4", rnd, time, rcode, len)
@@ -272,7 +267,7 @@ local function runserver(server)
 		log(msg)
 		return nil, msg
 	end
-	log(strf("server %s bound to %s port %s", VERSION,
+	log(strf("server %s bound to %s port %s", RXVERSION,
 		server.bind_addr, server.port ))
 	os.remove("./rxs.mustexit")
 	while not server.mustexit do
@@ -348,7 +343,7 @@ local rxs = {
 	runserver = runserver,
 	serverinit = serverinit,
 
-	VERSION = VERSION,
+	VERSION = RXVERSION,
 }--rxs
 
 return rxs

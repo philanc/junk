@@ -144,5 +144,37 @@ function util.isots(t, utcflag)
 	return os.date(fmt, t)
 end
 
+function util.sh(cmd)
+	-- execute a shell command
+	-- if the command succeeds (exit code = 0) then return the stdout
+	-- if popen() succeeds but the command fails (exit code > 0)
+	--   then return nil msg where msg is one line "Exit: <n>"
+	--   concatenated with the cmd stdout
+	-- if popen() fails, then return nil, popen_error_msg
+	--
+	local f, r, err, succ, status, exit
+	f, err = io.popen(cmd, "r")
+	if not f then return nil, util.errm(err, "popen") end
+	r, errm = f:read("a")
+	if not r then return nil, util.errm(err, "popen read") end
+	succ, exit, status = f:close()
+	status = (exit=='signal' and status+128 or status)
+	if status > 0 then 
+		return nil, strf("Exit: %d\n%s", status, r)
+	else
+		return r
+	end
+end
+
+function util.keys(t)
+	-- return table t string keys sorted and concatenated as a string
+	local kt = {}
+	for k,v in pairs(t) do
+		if type(k) == "string" then table.insert(kt, k) end
+	end
+	table.sort(kt)
+	return table.concat(kt, ", ")
+end
+
 ------------------------------------------------------------------------
 return util

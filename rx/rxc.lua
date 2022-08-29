@@ -1,15 +1,18 @@
 -- Copyright (c) 2022  Phil Leblanc  -- see LICENSE file
 
---[[  rx15 client
+--[[  rx11 client
 
-220325	rx15 - replaced sh-cmd, input with lua-cmd, param
-	(protocol has not changed since rx10)
-
+220310 
+	client-side extracted from rx10.lua
+	removed clientinit(). server parameters are setup by application.
+		(see rxc1.lua sample app)
+220829  
+	rx17 - predefined commands, added 'carg' to request()
 
 ]]
 ------------------------------------------------------------------------
 
-local VERSION = "rx15-220325"
+local VERSION = "rx17-220829"
 ------------------------------------------------------------------------
 -- imports and local definitions
 
@@ -65,15 +68,16 @@ end
 -----------------------------------------------------------------------
 -- client functions
 
-local function request(server, cmd, param, keyreqflag)
+local function request(server, cmd, carg, input, keyreqflag)
 	-- return rcode, rdata or nil, msg
 	-- in case of  communication error, return nil, errmsg
 	-- in case of  request handler error at the server, the function 
 	-- should return a valid non-zero code (and maybe some error 
 	-- msg in rdata)
-	param = param or ""
+	input = input or ""
+	carg = carg or ""
 	local sso, r, err, step
-	local data = spack("<s1s4s4", "rx10", cmd, param)
+	local data = spack("<s1s4s4", cmd, carg, input)
 	local key = keyreqflag and server.mpk or server.key
 	
 	if not key then return nil, "key missing" end
@@ -153,7 +157,7 @@ end--request()
 
 local function refreshkey(server)
 	local rcode, rdata
-	rcode, rdata = request(server, "REQKEY", "", true)
+	rcode, rdata = request(server, "reqkey", "", "", true)
 	if not rcode or rcode ~= 0 then
 		return nil, rdata
 	end

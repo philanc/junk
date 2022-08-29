@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# rxs.mon: launch it with: 
+#    rxs.mon >> rxs.log 2>&1 &
+#
+
+until ./rxs.bin ; do
+   echo "MON: $(date +%Y%m%d_%H%M%S)" \
+	"rxs crashed with exit code $?. Respawning..."
+   sleep 2
+done
+echo "MON: $(date +%Y%m%d_%H%M%S) rxs exiting."
