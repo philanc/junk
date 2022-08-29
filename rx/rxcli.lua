@@ -4,13 +4,6 @@
 220706 added ping command
 220829  rx17 - predefined commands
 
-syntax: rx hostname cmd [arg] [inputfile]
-
-  cmd:  keyreq ping fget fput sh exit testerror
-
-  inputfile: a filepath or "-" for stdin
-
-  hostname: a rxconf.lua filename
   
 ]]
 
@@ -27,7 +20,8 @@ local locfn, remfn  -- local and remote filenames
 
 
 local function usage()
-	print[[
+	print(rxc.VERSION, [[
+	
 	
 Usage:   rx  servername  x  shellcmd  
          rx  servername  d  remotefilename localfilename
@@ -36,7 +30,7 @@ Usage:   rx  servername  x  shellcmd
          rx  servername  e  (server exit)
          rx  servername  ee (test exit with error)
          rx  servername  k  (refresh key)
-]]
+]])
 end--usage()
 
 local function do_request(server, cmd, carg, param)
