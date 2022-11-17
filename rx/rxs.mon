@@ -7,6 +7,6 @@
 until ./rxs.bin ; do
    echo "MON: $(date +%Y%m%d_%H%M%S)" \
 	"rxs crashed with exit code $?. Respawning..."
-   sleep 2
+   sleep 5
 done
 echo "MON: $(date +%Y%m%d_%H%M%S) rxs exiting."

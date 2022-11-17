@@ -176,5 +176,11 @@ function util.keys(t)
 	return table.concat(kt, ", ")
 end
 
+function util.mem() 
+	-- return used memory, in bytes
+	collectgarbage()
+	return math.floor(collectgarbage'count' * 1024) 
+end
+
 ------------------------------------------------------------------------
 return util

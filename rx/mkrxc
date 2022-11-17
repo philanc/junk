@@ -1,13 +1,12 @@
 #!/bin/sh
 
-# usage example:  mkrxs test
+# usage example:  mkrxc test
 
 set -e
 
 srd=/ut/s/bin
-fname=rxs-$1
+fname=rxc-$1
 
-slua mkrxs.lua $1
+slua mkrxc.lua $1
 $srd/srglue $srd/srlua $fname.lua $fname.bin
 chmod +x $fname.bin
-

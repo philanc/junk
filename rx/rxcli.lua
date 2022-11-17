@@ -1,15 +1,14 @@
 
---[[ rx CLI client
+--[[ rx client
 
 220706 added ping command
-220829  rx17 - predefined commands
-
+220829 rx17 - predefined commands
+221116 rx18
   
 ]]
 
-local rxc = require"rxc"
+local rx = require"rx"
 local util = require "util"
-local lm = require 'luamonocypher'
 
 local strf = string.format
 
@@ -20,22 +19,24 @@ local locfn, remfn  -- local and remote filenames
 
 
 local function usage()
-	print(rxc.VERSION, [[
-	
-	
-Usage:   rx  servername  x  shellcmd  
-         rx  servername  d  remotefilename localfilename
-         rx  servername  u  localfilename  remotefilename
-         rx  servername  t  (server timestamp)
-         rx  servername  e  (server exit)
-         rx  servername  ee (test exit with error)
-         rx  servername  k  (refresh key)
+	print(rx.VERSION, [[
+
+Usage:   
+	rx  d    filename [-]
+	rx  u    filename
+	rx  l    [arg]
+	rx  ll   [arg]
+	rx  md5  [arg]
+	rx  t    (server timestamp)
+	rx  mem  (server used memory)
+	rx  du   (server total stored file size)
+
 ]])
 end--usage()
 
-local function do_request(server, cmd, carg, param)
+local function do_request(cmdline, content)
 	-- return result or nil, errmsg
-	local rcode, rdata = rxc.request(server, cmd, carg, param)
+	local rcode, rdata = rx.request(cmdline, content)
 	local r, msg
 	if not rcode then
 		r = nil
@@ -50,71 +51,48 @@ local function do_request(server, cmd, carg, param)
 end --do_request
 	
 
-if not (arg[1] and arg[2]) then 
+if not arg[1] then 
 	usage()
 	os.exit(1)
 end
 
-local name = arg[1]
-local server = assert(rxc.loadconf(name))
+local cmd = arg[1]
 
-local cmd = arg[2]
---~ if cmd == "-" then cmd = assert(util.fget("-")) end
 
-local r, err, filename, shellcmd
+local carg = arg[2] or ""
+local cmdline, content
 
-if not arg[2] then
-	usage()
-	os.exit(1)
-end
-
-if cmd == "k" then
-	r, err = rxc.refreshkey(server)
-	if not r then 
-		print("refreshkey error", err)
-		os.exit(1)
-	end
-	util.fput(server.confpath .. server.name .. ".key", server.key)
-	return
-elseif cmd == "t" then
-	r, msg = do_request(server, "ping")
-elseif cmd == "x" then
-	carg = arg[3]
-	if not carg then 
-		r, msg = nil, "shell command not provided" 
-	else
-		r, msg = do_request(server, "sh", carg, param)
-	end
-elseif cmd == "e" then
-	r, msg = do_request(server, "exit")
-elseif cmd == "ee" then
-	r, msg = do_request(server, "testerror")
+if cmd == "t" then
+	r, msg = do_request("ping")
+elseif cmd == "du" then
+	r, msg = do_request("du")
+elseif cmd == "log" then
+	r, msg = do_request("log")
+elseif cmd == "mem" then
+	r, msg = do_request("mem")
+elseif cmd == "l" then
+	cmdline = strf("ls %s", carg)
+	r, msg = do_request(cmdline)
+elseif cmd == "ll" then
+	cmdline = strf("ll %s", carg)
+	r, msg = do_request(cmdline)
+elseif cmd == "md5" then
+	cmdline = strf("md5 %s", carg)
+	r, msg = do_request(cmdline)
 elseif cmd == "d" then
-	remfn = arg[3]
-	locfn = arg[4]
-	if not remfn then 
-		r, msg = nil, "remote filename not provided"
-	elseif not locfn then 
-		r, msg = nil, "local filename not provided"
-	else 
-		r, msg = do_request(server, "fget", remfn, param)
-	end
+	cmdline = strf("fget %s", carg)
+	r, msg = do_request(cmdline)
 	if r then 
+		locfn = arg[3] or carg
 		assert(util.fput(locfn, r))
 		r = "ok"
 	end
 elseif cmd == "u" then
-	locfn = arg[3]
-	remfn = arg[4]
-	if not remfn then 
-		r, msg = nil, "remote filename not provided"
-	elseif not locfn then 
-		r, msg = nil, "local filename not provided"
-	else 
-		r, msg = util.fget(locfn)
-		if r then 
-			r, msg = do_request(server, "fput", remfn, param)
-		end
+	cmdline = strf("fput %s", carg)
+	content = assert(util.fget(carg))
+	r, msg = do_request(cmdline, content)
+	if r then 
+		r = "ok"
 	end
 else
 	r = nil

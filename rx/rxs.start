@@ -1,6 +1,10 @@
 #!/bin/sh
 
+# list processes:	pgrep -l rx
+# stop server:  	pkill -e rx
+
 set -e
-rm -f ./rxs.mustexit
+
+mkdir -p f
 ./rxs.mon >> rxs.log 2>&1 &
 
