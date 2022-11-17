@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# list rxs processes:	pgrep -a rxs
+
+set -e
+
+# stop all rxs processes
+pkill -e rxs
+
