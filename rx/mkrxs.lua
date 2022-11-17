@@ -1,3 +1,4 @@
+#!/bin/env slua
 
 -- mkrxs for rx18
 
@@ -67,7 +68,25 @@ util.fput(outname, s)
 
 print("rx server stored in:", outname)
 
-	
+-- use srlua / srglue to make an executable
+
+local cmd = strf([[#!/bin/sh
+  set -e
+  srd=/ut/s/bin
+  fname=rxs-%s
+  $srd/srglue $srd/srlua $fname.lua $fname.bin
+  chmod +x $fname.bin
+	]], confname)
+
+local r, msg = util.sh(cmd)
+
+if r then
+	print("srlua: ok")
+else
+	print("slrlua failed:")
+	print(msg)
+end
+
 	
 	
 	
