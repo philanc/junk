@@ -4,6 +4,7 @@
 220706 added ping command
 220829 rx17 - predefined commands
 221116 rx18
+221123 rx19 (same as rx18 but uses slua-1.0, built w/ luazen-2.0)
   
 ]]
 

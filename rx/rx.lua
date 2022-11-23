@@ -1,10 +1,12 @@
 -- Copyright (c) 2022  Phil Leblanc  -- see LICENSE file
 
+local RXVERSION = "rx19-221123"
+
+-- rx19: same as rx18 except it uses slua-1.0 (built with luazen-2.0)
+
 local util = require "util"
 
 skey = util.hextos(skey)
-
-local RXVERSION = "rx19-221123"
 
 local sock = require 'ssock'  -- stream sockets
 
