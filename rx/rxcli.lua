@@ -19,7 +19,7 @@ local locfn, remfn  -- local and remote filenames
 
 
 local function usage()
-	print(rx.VERSION, [[
+	print(rx.RXVERSION, [[
 
 Usage:   
 	rx  d    filename [-]

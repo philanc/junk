@@ -4,7 +4,7 @@ local util = require "util"
 
 skey = util.hextos(skey)
 
-local RXVERSION = "rx18-221116"
+local RXVERSION = "rx19-221123"
 
 local sock = require 'ssock'  -- stream sockets
 
@@ -19,7 +19,7 @@ local EINVAL = 22
 
 -- rx encryption
 
-local lm = require 'luamonocypher'
+local lz = require 'luazen'
 
 local KEYLEN = 32
 local NONCELEN = 24
@@ -29,14 +29,14 @@ local HDRLEN = 16	-- req:  entropy(8) reqtime(4) datalen(4)
 local EHDRLEN = 32	-- (hdr + mac)
 
 local function encrypt(key, nonce, m, ctr)
-	return lm.encrypt(key, nonce, m, ctr)
+	return lz.encrypt(key, nonce, m, ctr)
 end
 
 local function decrypt(key, nonce, c, ctr)
-	return lm.decrypt(key, nonce, c, ctr)
+	return lz.decrypt(key, nonce, c, ctr)
 end
 
-local randombytes = lm.randombytes
+local randombytes = lz.randombytes
 
 local function newnonce()
 	return randombytes(NONCELEN)
